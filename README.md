@@ -2,6 +2,7 @@
 
 *Hi lang anay. Basi ikaw na.*
 
+*Diin ta?*
 Public, nickname-first random dating chat for adults around BCD. Guests self-attest that they are 18 or older. School is an optional self-entered label. An optional round or favorite spot supplies an icebreaker. Two private **Shoot Your Shot** taps save a conversation to **Matches**.
 
 ## Run locally for ₱0
