@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { transact } from '../../../db/store';
-import { barGenders, barInterests, drinks, spots, reasons } from '../../options';
+import { genders, barInterests, drinks, spots, reasons } from '../../options';
 import { challengeConfig, verifyJoinChallenge } from './turnstile';
 
 const cookie = 'shattana_guest';
@@ -78,8 +78,10 @@ async function handle(req: NextRequest, write: boolean) {
             where id=$2 and (a=$1 or b=$1) and not matched returning id`, [id, input.chatId]);
           if (!closed) throw new InputError('This Quick Chat has ended.');
         } else if (action === 'find') {
-          await query('update guest set drink=$2,spot=$3 where id=$1',
-            [id, drinks.includes(input.drink) ? input.drink : '', spots.includes(input.spot) ? input.spot : '']);
+          const spot = input.spot === 'Acacia' ? 'Akasya' : input.spot;
+          const gender = genders.includes(input.quickGender) ? input.quickGender : '';
+          await query('update guest set drink=$2,spot=$3,quick_gender=$4 where id=$1',
+            [id, drinks.includes(input.drink) ? input.drink : '', spots.includes(spot) ? spot : '', gender]);
         }
         const [active] = await query('select id from chat where (a=$1 or b=$1) and not matched and not closed', [id]);
         if (!active) {
@@ -99,7 +101,9 @@ async function handle(req: NextRequest, write: boolean) {
               -ln(1-random()) / (1+greatest(0,extract(epoch from now()-g.queued_at))/30)
             limit 1`, [id]);
           if (peer) {
-            await query('insert into chat(id,a,b) values($1,$2,$3)', [randomUUID(), id, peer.id]);
+            await query(`insert into chat(id,a,b,a_gender,b_gender)
+              select $1,a.id,b.id,a.quick_gender,b.quick_gender from guest a cross join guest b
+              where a.id=$2 and b.id=$3`, [randomUUID(), id, peer.id]);
             await query('update guest set queued_at=null where id in ($1,$2)', [id, peer.id]);
           } else {
             await query('update guest set queued_at=coalesce(queued_at,now()) where id=$1', [id]);
@@ -112,7 +116,7 @@ async function handle(req: NextRequest, write: boolean) {
         const answer = clean(input.answer, 140);
         const favorite = clean(input.favorite, 60);
         if (!adultAge(age) || !adultAge(minAge) || !adultAge(maxAge) || minAge > maxAge ||
-          !barGenders.includes(gender) || !barInterests.includes(interest) || !favorite || !answer) {
+          !genders.includes(gender) || !barInterests.includes(interest) || !favorite || !answer) {
           throw new InputError('Complete your profile and choose a valid age range from 18 to 120.');
         }
         await query(`update guest set bar_age=$2,bar_gender=$3,bar_interest=$4,
@@ -191,7 +195,7 @@ async function handle(req: NextRequest, write: boolean) {
         }
       }
 
-      const [current] = await query(`select nickname, school, drink, spot,
+      const [current] = await query(`select nickname, school, drink, spot, quick_gender as "quickGender",
         bar_age as age, bar_gender as gender, bar_interest as interest, bar_min_age as "minAge",
         bar_max_age as "maxAge", bar_spot as favorite, bar_answer as answer,
         (queued_at is not null and seen_at>now()-interval '35 seconds') as waiting from guest where id=$1`, [id]);
@@ -202,6 +206,7 @@ async function handle(req: NextRequest, write: boolean) {
         and not exists (select 1 from bar_hi where sender=me.id and recipient=g.id)
         order by (g.id>$2::uuid) desc nulls last, g.id limit 1`, [id, uuid(after) ? after : null]) : [];
       const chats = await query(`select c.id,c.matched,g.nickname,g.school,g.spot,g.drink,
+        case when c.a=$1 then c.b_gender else c.a_gender end as gender,
         case when c.a=$1 then c.a_shot else c.b_shot end as shot,
         case when c.a=$1 then c.bar_pending_a else c.bar_pending_b end as "barPending"
         from chat c join guest g on g.id=case when c.a=$1 then c.b else c.a end

@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { Flag, Heart, MapPin, Shuffle } from 'lucide-react';
-import { barGenders, barInterests, barPrompt, reasons } from './options';
+import { genders, barInterests, barPrompt, reasons } from './options';
 
 export type BarProfile = {
   age: number | null; gender: string | null; interest: string | null;
@@ -29,7 +29,7 @@ export function BarSetup({ profile, busy, save }: {
         <label>Your age<input name="age" type="number" min={18} max={120} required defaultValue={profile.age ?? ''} /></label>
         <label>Your gender<select name="gender" required defaultValue={profile.gender ?? ''}>
           <option value="" disabled>Choose one</option>
-          {barGenders.map(gender => <option key={gender}>{gender}</option>)}
+          {genders.map(gender => <option key={gender}>{gender}</option>)}
         </select></label>
       </div>
       <label>Favorite hangout<input name="favorite" required maxLength={60} defaultValue={profile.favorite ?? ''} /></label>

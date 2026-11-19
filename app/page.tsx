@@ -2,15 +2,15 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, Flag, Heart, MessageCircle, Moon, Shuffle, MapPin, ShieldCheck, Sun } from 'lucide-react';
-import { drinks, spots, reasons } from './options';
+import { drinks, genders, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
 import { afterHours } from './after-hours';
 import { JoinChallenge } from './join-challenge';
 
 const openChatKey = 'shattana.open-chat';
-type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; matched: boolean; shot: boolean; barPending: boolean };
+type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; gender: string; matched: boolean; shot: boolean; barPending: boolean };
 type State = {
-  profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; waiting: boolean }) | null;
+  profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; quickGender: string; waiting: boolean }) | null;
   challenge?: { required: boolean; siteKey?: string };
   activeUsers: number;
   active?: Chat;
@@ -38,6 +38,7 @@ export default function Home() {
   const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [drink, setDrink] = useState('');
   const [spot, setSpot] = useState('');
+  const [quickGender, setQuickGender] = useState('');
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [report, setReport] = useState(false);
@@ -115,6 +116,7 @@ export default function Home() {
           hydrated.current = true;
           setDrink(payload.profile.drink);
           setSpot(payload.profile.spot);
+          setQuickGender(payload.profile.quickGender);
         }
         if (chatId && payload.selected?.id !== chatId) setChatId('');
         if (!chatId && payload.selected?.matched && payload.selected.id === data?.active?.id && view === 'home') {
@@ -330,15 +332,21 @@ export default function Home() {
             ? <section className="card waiting"><div className="tile-icon"><Shuffle size={23} /></div><h2 role="status">Finding someone…</h2><p>Keep this tab open. We’ll open the chat when someone joins.</p><button className="secondary" onClick={() => void act('cancel')} disabled={busy}>Cancel search</button></section>
             : <section className="card discovery-card">
               <div className="card-head"><h2>Quick Chat</h2><p>Get paired at random. Choose an icebreaker or jump right in.</p></div>
+              <fieldset className="fields"><label>Gender <span>(optional, visible in chat)</span>
+                <select value={quickGender} onChange={event => setQuickGender(event.target.value)}>
+                  <option value="">Prefer not to share</option>
+                  {genders.map(gender => <option key={gender}>{gender}</option>)}
+                </select>
+              </label></fieldset>
               <fieldset><legend>What’s your round? <span>Optional</span></legend><div className="pills">{drinks.map(option => <button type="button" key={option} aria-pressed={drink === option} onClick={() => setDrink(drink === option ? '' : option)}>{option}</button>)}</div></fieldset>
               <fieldset><legend>Where’s your spot? <span>Optional</span></legend><div className="pills spot-options">{spots.map(option => <button type="button" key={option} aria-pressed={spot === option} onClick={() => setSpot(spot === option ? '' : option)}>{option}</button>)}</div></fieldset>
-              <button className="primary" disabled={busy} onClick={() => void act('find', { drink, spot })}>{busy ? 'Starting…' : 'Start Quick Chat'} <ArrowRight size={19} /></button>
+              <button className="primary" disabled={busy} onClick={() => void act('find', { drink, spot, quickGender })}>{busy ? 'Starting…' : 'Start Quick Chat'} <ArrowRight size={19} /></button>
             </section>)}
 
           {joined && view === 'home' && !chat && <section className="after-hours">
             <div><h3>After Hours</h3><p>{meetup?.tonight ? 'Tonight’s meetup started at 9 PM.' : meetup ? `Next meetup Friday, ${meetup.date} at 9 PM.` : 'Fridays at 9 PM.'} Bacolod time. Everyone joins the Quick Chat pool.</p></div>
             <button className="secondary" disabled={busy || waiting} onClick={async () => {
-              if (await act('after-hours', { drink, spot })) setMode('quick');
+              if (await act('after-hours', { drink, spot, quickGender })) setMode('quick');
             }}>{waiting ? 'In the queue' : 'Join Quick Chat'}</button>
           </section>}
 
@@ -351,7 +359,7 @@ export default function Home() {
           {joined && chat && <section className="card conversation" key={chat.id}>
             <div className="chat-head">
               <div className="avatar" aria-hidden="true">{Array.from(chat.nickname)[0]}</div>
-              <div className="peer"><h2>{chat.nickname}</h2><p>{chat.matched ? 'Saved match' : chat.school || 'Quick Chat'}</p></div>
+              <div className="peer"><h2>{chat.nickname}</h2><p>{[chat.gender, chat.matched ? 'Saved match' : chat.school || 'Quick Chat'].filter(Boolean).join(' · ')}</p></div>
             </div>
             <div className="chat-controls">
               <button className="secondary" disabled={busy} onClick={async () => {
