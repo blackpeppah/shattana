@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './style.css';
 
 export const metadata: Metadata = {
-  title: 'Shattana! | Hi lang anay.',
+  title: 'Shattana! | down for a drink? g!',
   description: 'Nickname-first random chat around BCD.',
 };
 export const viewport: Viewport = { interactiveWidget: 'resizes-content' };
