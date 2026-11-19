@@ -8,7 +8,6 @@ import { afterHours } from './after-hours';
 import { JoinChallenge } from './join-challenge';
 
 const openChatKey = 'shattana.open-chat';
-const nextChatNotice = 'Chat ended. Looking for someone new…';
 type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; gender: string; matched: boolean; shot: boolean; barPending: boolean };
 type State = {
   profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; quickGender: string; waiting: boolean }) | null;
@@ -19,6 +18,7 @@ type State = {
   matches?: Chat[];
   candidate?: BarCandidate;
   newBarChat?: string;
+  advancedChat?: string;
   messages?: { id: string; mine: boolean; body: string }[];
 };
 
@@ -46,6 +46,7 @@ export default function Home() {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [endingQuickChat, setEndingQuickChat] = useState(false);
   const [matchAnnouncement, setMatchAnnouncement] = useState('');
   const composer = useRef<HTMLInputElement>(null);
   const thread = useRef<HTMLDivElement>(null);
@@ -54,6 +55,7 @@ export default function Home() {
   const followThread = useRef(true);
   const revision = useRef(0);
   const requestInProgress = useRef(false);
+  const endingChat = useRef(false);
   const lastHeartbeat = useRef(0);
   const hydrated = useRef(false);
   const chat = chatId ? (data?.selected?.id === chatId ? data.selected : undefined)
@@ -63,6 +65,18 @@ export default function Home() {
   const joined = Boolean(data?.profile);
   const lastMessage = data?.messages?.at(-1)?.id;
   const inConversation = Boolean(chat);
+
+  async function showEndedQuickChat() {
+    endingChat.current = true;
+    setEndingQuickChat(true);
+    setReport(false);
+    await new Promise<void>(resolve => window.setTimeout(resolve, 1800));
+    endingChat.current = false;
+    setEndingQuickChat(false);
+    setView('home');
+    setMode('quick');
+    setChatId('');
+  }
 
   async function request(action?: string, fields: Record<string, unknown> = {}, selected = chatId) {
     const params = new URLSearchParams();
@@ -108,9 +122,14 @@ export default function Home() {
         const payload = await request(heartbeat ? 'heartbeat' : undefined, {}, chatId || data?.active?.id);
         if (heartbeat) lastHeartbeat.current = Date.now();
         if (!live || version !== revision.current) return;
+        const previousQuickChat = data?.active?.id;
+        if (view === 'home' && previousQuickChat && payload.advancedChat === previousQuickChat) {
+          await showEndedQuickChat();
+          setData(payload);
+          return;
+        }
         setData(payload);
         if (!data) setError('');
-        const previousQuickChat = data?.active?.id;
         if (view === 'home' && previousQuickChat && payload.active?.id !== previousQuickChat &&
           !payload.matches?.some(match => match.id === previousQuickChat)) {
           setNotice('Chat ended. Start a new Quick Chat whenever you’re ready.');
@@ -150,11 +169,6 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => { setBarReport(false); }, [data?.candidate?.id, mode]);
-  useEffect(() => {
-    if (!chat || notice !== nextChatNotice) return;
-    const timer = window.setTimeout(() => setNotice(''), 5000);
-    return () => window.clearTimeout(timer);
-  }, [chat?.id, notice]);
   useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); }, [chat?.id]);
   useLayoutEffect(() => { followThread.current = true; }, [chat?.id]);
   useEffect(() => {
@@ -169,8 +183,8 @@ export default function Home() {
   }, [chat, chatId, data]);
 
   useLayoutEffect(() => {
-    if (thread.current && followThread.current) thread.current.scrollTop = thread.current.scrollHeight;
-  }, [lastMessage, chat?.id, matchAnnouncement]);
+    if (thread.current && (followThread.current || endingQuickChat)) thread.current.scrollTop = thread.current.scrollHeight;
+  }, [lastMessage, chat?.id, matchAnnouncement, endingQuickChat]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -197,7 +211,7 @@ export default function Home() {
   }, [inConversation]);
 
   async function act(action: string, fields: Record<string, unknown> = {}) {
-    if (requestInProgress.current) return false;
+    if (requestInProgress.current || endingChat.current) return false;
     requestInProgress.current = true;
     revision.current++;
     setBusy(true);
@@ -205,6 +219,7 @@ export default function Home() {
     setNotice('');
     try {
       const payload = await request(action, fields, chat?.id ?? chatId);
+      if (action === 'next') await showEndedQuickChat();
       setData(payload);
       if (action === 'report') setNotice('Report submitted. This guest has been blocked.');
       if (action === 'block') setNotice('This guest has been blocked.');
@@ -220,7 +235,6 @@ export default function Home() {
         setMode('quick');
       }
       if (action === 'leave') setNotice('You left the conversation.');
-      if (action === 'next') setNotice(nextChatNotice);
       if (action === 'unmatch') {
         setView('matches');
         setNotice('Match removed.');
@@ -270,10 +284,10 @@ export default function Home() {
   return (
     <div ref={shell} className={chat ? 'shell chat-shell' : 'shell'}>
       <header className="masthead">
-        <button className="brand" onClick={() => navigate('home')}>shattana<span>!</span></button>
+        <button className="brand" disabled={endingQuickChat} onClick={() => navigate('home')}>shattana<span>!</span></button>
         {joined && <nav aria-label="Main navigation">
-          <button aria-current={view === 'home' ? 'page' : undefined} onClick={() => navigate('home')}><Shuffle size={16} /> Discover</button>
-          <button aria-current={view === 'matches' ? 'page' : undefined} onClick={() => navigate('matches')}><Heart size={16} /> Matches {matches.length > 0 && <span className="count">{matches.length}</span>}</button>
+          <button disabled={endingQuickChat} aria-current={view === 'home' ? 'page' : undefined} onClick={() => navigate('home')}><Shuffle size={16} /> Discover</button>
+          <button disabled={endingQuickChat} aria-current={view === 'matches' ? 'page' : undefined} onClick={() => navigate('matches')}><Heart size={16} /> Matches {matches.length > 0 && <span className="count">{matches.length}</span>}</button>
         </nav>}
         <div className="header-tools">
           {typeof data?.activeUsers === 'number' && <output className="presence-pill" aria-label="Active guests"
@@ -299,9 +313,7 @@ export default function Home() {
 
         <div className="panel">
           {error && <p className="error" role="alert">{error}</p>}
-          {notice && (!chat || notice === nextChatNotice) && <p className="notice" role="status">
-            {chat ? 'Chat ended. You’re connected with someone new.' : notice}
-          </p>}
+          {notice && !chat && <p className="notice" role="status">{notice}</p>}
           {!data && !error && <p role="status" className="card muted">Loading Shattana…</p>}
 
           {data && !joined && <form className="card entry" onSubmit={async event => {
@@ -378,12 +390,12 @@ export default function Home() {
               <div className="peer"><h2>{chat.nickname}</h2><p>{[chat.gender, chat.matched ? 'Saved match' : chat.school || 'Quick Chat'].filter(Boolean).join(' · ')}</p></div>
             </div>
             <div className="chat-controls">
-              <button className="secondary" disabled={busy} onClick={async () => {
+              <button className="secondary" disabled={busy || endingQuickChat} onClick={async () => {
                 if (!chat.matched) { await act('leave'); return; }
                 if (!chat.barPending || await act('bar-dismiss')) navigate('matches');
               }}>{chat.matched ? 'Back to Matches' : 'Leave chat'}</button>
-              {!chat.matched && <button className="secondary" disabled={busy} onClick={() => void act('next')}>Next chat</button>}
-              <button className="secondary chat-menu" aria-controls="chat-moderation" aria-expanded={report} onClick={() => {
+              {!chat.matched && <button className="secondary" disabled={busy || endingQuickChat} onClick={() => void act('next')}>Next chat</button>}
+              <button className="secondary chat-menu" disabled={endingQuickChat} aria-controls="chat-moderation" aria-expanded={report} onClick={() => {
                 setReport(!report);
                 setConfirmRemove(false);
               }}><Flag size={16} /> Chat menu</button>
@@ -408,13 +420,13 @@ export default function Home() {
             </div>
             {!chat.matched && <div className="shot-control">
               {chat.shot ? <p className="shot-note" role="status">Shot sent · only you can see this</p>
-                : <button className="secondary shot-button" disabled={busy} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
+                : <button className="secondary shot-button" disabled={busy || endingQuickChat} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
             </div>}
             <div className="thread" ref={thread} role="log" aria-label="Messages" tabIndex={0} onScroll={event => {
               const log = event.currentTarget;
               followThread.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
             }}>
-              {!data?.messages?.length && !chat.matched && <div className="first-message">
+              {!data?.messages?.length && !chat.matched && !endingQuickChat && <div className="first-message">
                 <div className="icebreaker-lines">{icebreakers.map(line => <p key={line}>{line}</p>)}</div>
                 <button type="button" className="secondary" onClick={() => {
                   if (!draft) setDraft('g!');
@@ -423,10 +435,11 @@ export default function Home() {
               </div>}
               {data?.messages?.map(message => <p className={message.mine ? 'bubble mine' : 'bubble'} key={message.id}>{message.body}</p>)}
               {matchAnnouncement === chat.id && <p className="match-announcement">Ti, pareho kamo gali.</p>}
+              {endingQuickChat && <p className="match-announcement" role="status">Chat ended. Looking for someone new…</p>}
             </div>
             <form className="composer" onSubmit={send}>
-              <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy} value={draft} onChange={event => setDraft(event.target.value)} />
-              <button className="primary send" disabled={busy || !draft.trim()}>Send</button>
+              <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy || endingQuickChat} value={draft} onChange={event => setDraft(event.target.value)} />
+              <button className="primary send" disabled={busy || endingQuickChat || !draft.trim()}>Send</button>
             </form>
           </section>}
         </div>

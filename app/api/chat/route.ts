@@ -74,9 +74,15 @@ async function handle(req: NextRequest, write: boolean) {
       if (action === 'find' || action === 'next' || search) {
         if (action === 'next') {
           if (!uuid(input.chatId)) throw new InputError('Choose a conversation.');
-          const [closed] = await query(`update chat set closed=true, ended_at=case when closed then ended_at else now() end
-            where id=$2 and (a=$1 or b=$1) and not matched returning id`, [id, input.chatId]);
-          if (!closed) throw new InputError('This Quick Chat has ended.');
+          const [previous] = await query(`select a,b,closed from chat
+            where id=$2 and (a=$1 or b=$1) and not matched`, [id, input.chatId]);
+          if (!previous) throw new InputError('This Quick Chat has ended.');
+          if (!previous.closed) {
+            await query('update chat set closed=true, ended_at=now(), ended_by_next=true where id=$1', [input.chatId]);
+            const peer = previous.a === id ? previous.b : previous.a;
+            await query(`update guest set queued_at=coalesce(queued_at,now()) where id=$1
+              and seen_at>now()-interval '35 seconds'`, [peer]);
+          }
         } else if (action === 'find') {
           const spot = input.spot === 'Acacia' ? 'Akasya' : input.spot;
           const gender = genders.includes(input.quickGender) ? input.quickGender : '';
@@ -214,12 +220,14 @@ async function handle(req: NextRequest, write: boolean) {
         and (c.matched or g.seen_at > now()-interval '90 seconds') order by c.created_at desc`, [id]);
       const active = chats.find(chat => !chat.matched);
       const requested = newBarChat ?? (write ? input.chatId : req.nextUrl.searchParams.get('chat'));
+      const [advanced] = uuid(requested) && !chats.some(chat => chat.id === requested)
+        ? await query('select id from chat where id=$2 and (a=$1 or b=$1) and ended_by_next', [id, requested]) : [];
       const barMatch = chats.find(chat => chat.barPending);
       const requestedChat = action === 'bar-dismiss' ? undefined : chats.find(chat => chat.id === requested);
       const selected = (requestedChat?.matched ? requestedChat : undefined) ?? barMatch ?? active;
       const messages = selected ? await query(`select * from (select id, sender=$1 as mine, body
         from message where chat_id=$2 order by id desc limit 200) recent order by id`, [id, selected.id]) : [];
-      return { profile: current, active, selected, candidate, newBarChat, matches: chats.filter(chat => chat.matched), messages, activeUsers: await activeUsers() };
+      return { profile: current, active, selected, candidate, newBarChat, advancedChat: advanced?.id, matches: chats.filter(chat => chat.matched), messages, activeUsers: await activeUsers() };
     });
     const response = NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
     if (created && id) response.cookies.set(cookie, id, { httpOnly: true, secure: Boolean(process.env.VERCEL) || req.nextUrl.protocol === 'https:', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365 });

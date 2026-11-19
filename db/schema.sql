@@ -32,6 +32,7 @@ create index if not exists chat_b on chat(b);
 alter table chat add column if not exists bar_pending_a boolean not null default false;
 alter table chat add column if not exists bar_pending_b boolean not null default false;
 alter table chat add column if not exists ended_at timestamptz;
+alter table chat add column if not exists ended_by_next boolean not null default false;
 alter table chat add column if not exists a_gender text not null default '';
 alter table chat add column if not exists b_gender text not null default '';
 create index if not exists chat_pair_history on chat (least(a,b), greatest(a,b));
