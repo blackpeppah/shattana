@@ -89,10 +89,13 @@ nav button[aria-current] { border-bottom-color: var(--accent); }
 .count { font-variant-numeric: tabular-nums; }
 .header-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .masthead nav { margin-inline-start: auto; }
-.active-users { display: inline-flex; align-items: center; gap: 6px; color: var(--presence); font-size: 13px; font-weight: 700; white-space: nowrap; }
-.active-users > span { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.theme-switch { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--accent); }
-.theme-switch:hover { background: var(--tint); }
+.presence-pill { display: inline-grid; place-items: center; min-width: 33px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--presence); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.theme-switch { display: grid; place-items: center; min-height: 44px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--accent); }
+.theme-track { position: relative; width: 56px; height: 29px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.theme-thumb { position: absolute; inset-block-start: 3px; inset-inline-start: 3px; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: var(--accent); color: var(--on-accent); transition: transform 150ms ease; }
+.theme-switch[aria-checked=true] .theme-thumb { transform: translateX(27px); }
+.theme-switch:hover .theme-track { background: var(--tint); }
+@media (prefers-reduced-motion: reduce) { .theme-thumb { transition: none; } }
 
 main { padding-block: 52px; }
 .discover { display: grid; grid-template-columns: 1.02fr 1fr; align-items: stretch; gap: 20px; }
@@ -348,7 +351,7 @@ legend { margin-bottom: 8px; padding: 0; }
   nav button { font-size: 13px; gap: 4px; }
   nav svg { display: none; }
   .header-tools { gap: 8px; }
-  .active-users { font-size: 12px; }
+  .presence-pill { font-size: 12px; }
   main { padding-block: 14px max(18px, env(safe-area-inset-bottom)); }
   .discover { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .hero { min-height: 0; padding: clamp(18px, 5vw, 28px); border-radius: 20px; }

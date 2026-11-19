@@ -260,11 +260,12 @@ export default function Home() {
           <button aria-current={view === 'matches' ? 'page' : undefined} onClick={() => navigate('matches')}><Heart size={16} /> Matches {matches.length > 0 && <span className="count">{matches.length}</span>}</button>
         </nav>}
         <div className="header-tools">
-          {typeof data?.activeUsers === 'number' && <span className="active-users" title="Guests active in the last 90 seconds">
-            <span aria-hidden="true" />{data.activeUsers} active
-          </span>}
+          {typeof data?.activeUsers === 'number' && <output className="presence-pill" aria-label="Active guests"
+            title="Guests active in the last 90 seconds. Join as a guest to be counted.">{data.activeUsers}</output>}
           <button type="button" className="theme-switch" role="switch" aria-label="Dark mode" aria-checked={dark} onClick={toggleTheme}>
-            {dark ? <Moon size={19} aria-hidden="true" /> : <Sun size={19} aria-hidden="true" />}
+            <span className="theme-track" aria-hidden="true">
+              <span className="theme-thumb">{dark ? <Moon size={13} /> : <Sun size={13} />}</span>
+            </span>
           </button>
         </div>
       </header>
