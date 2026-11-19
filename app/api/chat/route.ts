@@ -53,7 +53,11 @@ async function handle(req: NextRequest, write: boolean) {
         [profile] = await query('insert into guest(id,nickname,school,drink,spot) values($1,$2,$3,$4,$5) returning *',
           [id, nickname, clean(input.school, 60), '', '']);
       }
-      if (!profile) return { profile: null, challenge: { required: challenge.required, siteKey: challenge.siteKey } };
+      const activeUsers = async () => {
+        const [presence] = await query("select count(*)::int as total from guest where seen_at > now()-interval '90 seconds'");
+        return Number(presence.total);
+      };
+      if (!profile) return { profile: null, activeUsers: await activeUsers(), challenge: { required: challenge.required, siteKey: challenge.siteKey } };
       const action = input.action === 'after-hours' ? 'find' : input.action;
       const showBar = req.nextUrl.searchParams.get('bar') === '1';
       let newBarChat: unknown;
@@ -210,7 +214,7 @@ async function handle(req: NextRequest, write: boolean) {
       const selected = (requestedChat?.matched ? requestedChat : undefined) ?? barMatch ?? active;
       const messages = selected ? await query(`select * from (select id, sender=$1 as mine, body
         from message where chat_id=$2 order by id desc limit 200) recent order by id`, [id, selected.id]) : [];
-      return { profile: current, active, selected, candidate, newBarChat, matches: chats.filter(chat => chat.matched), messages };
+      return { profile: current, active, selected, candidate, newBarChat, matches: chats.filter(chat => chat.matched), messages, activeUsers: await activeUsers() };
     });
     const response = NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
     if (created && id) response.cookies.set(cookie, id, { httpOnly: true, secure: Boolean(process.env.VERCEL) || req.nextUrl.protocol === 'https:', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 365 });

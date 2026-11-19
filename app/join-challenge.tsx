@@ -11,6 +11,7 @@ declare global {
         sitekey: string;
         action: string;
         size: 'compact' | 'flexible';
+        theme: 'light' | 'dark';
         callback: (token: string) => void;
         'expired-callback': () => void;
         'error-callback': () => void;
@@ -20,7 +21,7 @@ declare global {
   }
 }
 
-export function JoinChallenge({ siteKey, onToken }: { siteKey: string; onToken: (token: string) => void }) {
+export function JoinChallenge({ siteKey, theme, onToken }: { siteKey: string; theme: 'light' | 'dark'; onToken: (token: string) => void }) {
   const container = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -43,12 +44,13 @@ export function JoinChallenge({ siteKey, onToken }: { siteKey: string; onToken: 
       sitekey: siteKey,
       action: joinChallengeAction,
       size,
+      theme,
       callback: token => { setFailed(false); onToken(token); },
       'expired-callback': () => onToken(''),
       'error-callback': () => { onToken(''); setFailed(true); },
     });
     return () => turnstile.remove(id);
-  }, [ready, siteKey, size, onToken]);
+  }, [ready, siteKey, size, theme, onToken]);
 
   return <>
     <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"

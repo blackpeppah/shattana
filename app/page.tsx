@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, Flag, Heart, MessageCircle, Shuffle, MapPin, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Flag, Heart, MessageCircle, Moon, Shuffle, MapPin, ShieldCheck, Sun } from 'lucide-react';
 import { drinks, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
 import { afterHours } from './after-hours';
@@ -12,6 +12,7 @@ type Chat = { id: string; nickname: string; school: string; drink: string; spot:
 type State = {
   profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; waiting: boolean }) | null;
   challenge?: { required: boolean; siteKey?: string };
+  activeUsers: number;
   active?: Chat;
   selected?: Chat;
   matches?: Chat[];
@@ -22,6 +23,7 @@ type State = {
 
 export default function Home() {
   const [data, setData] = useState<State>();
+  const [dark, setDark] = useState(false);
   const [view, setView] = useState<'home' | 'matches'>('home');
   const [mode, setMode] = useState<'quick' | 'bar'>('quick');
   const [barCursor, setBarCursor] = useState('');
@@ -50,6 +52,7 @@ export default function Home() {
   const followThread = useRef(true);
   const revision = useRef(0);
   const requestInProgress = useRef(false);
+  const lastHeartbeat = useRef(0);
   const hydrated = useRef(false);
   const chat = chatId ? (data?.selected?.id === chatId ? data.selected : undefined)
     : view === 'home' ? (data?.selected?.barPending ? data.selected : data?.active) : undefined;
@@ -76,6 +79,17 @@ export default function Home() {
   }
 
   useEffect(() => {
+    setDark(document.documentElement.dataset.theme === 'dark');
+  }, []);
+
+  function toggleTheme() {
+    const theme = dark ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    setDark(!dark);
+    try { localStorage.setItem('shattana.theme', theme); } catch {}
+  }
+
+  useEffect(() => {
     const savedChat = sessionStorage.getItem(openChatKey);
     if (savedChat) setChatId(savedChat);
   }, []);
@@ -83,15 +97,14 @@ export default function Home() {
   useEffect(() => {
     let live = true;
     let inFlight = false;
-    let lastHeartbeat = Date.now();
     async function refresh() {
       if (inFlight || requestInProgress.current || document.hidden) return;
       inFlight = true;
       const version = revision.current;
       try {
-        const heartbeat = (waiting || data?.active) && Date.now() - lastHeartbeat > 12000;
-        if (heartbeat) lastHeartbeat = Date.now();
+        const heartbeat = joined && Date.now() - lastHeartbeat.current > (waiting || data?.active ? 12000 : 35000);
         const payload = await request(heartbeat ? 'heartbeat' : undefined, {}, chatId || data?.active?.id);
+        if (heartbeat) lastHeartbeat.current = Date.now();
         if (!live || version !== revision.current) return;
         setData(payload);
         if (!data) setError('');
@@ -246,7 +259,14 @@ export default function Home() {
           <button aria-current={view === 'home' ? 'page' : undefined} onClick={() => navigate('home')}><Shuffle size={16} /> Discover</button>
           <button aria-current={view === 'matches' ? 'page' : undefined} onClick={() => navigate('matches')}><Heart size={16} /> Matches {matches.length > 0 && <span className="count">{matches.length}</span>}</button>
         </nav>}
-        <span className="age">18+</span>
+        <div className="header-tools">
+          {typeof data?.activeUsers === 'number' && <span className="active-users" title="Guests active in the last 90 seconds">
+            <span aria-hidden="true" />{data.activeUsers} active
+          </span>}
+          <button type="button" className="theme-switch" role="switch" aria-label="Dark mode" aria-checked={dark} onClick={toggleTheme}>
+            {dark ? <Moon size={19} aria-hidden="true" /> : <Sun size={19} aria-hidden="true" />}
+          </button>
+        </div>
       </header>
 
       <main className={view === 'home' && !chat ? 'discover' : 'workspace'}>
@@ -279,7 +299,7 @@ export default function Home() {
               <label>School <span>(optional, visible in chat)</span><input maxLength={60} value={school} onChange={event => setSchool(event.target.value)} placeholder="Your school" /></label>
             </div>
             <label className="check"><input type="checkbox" checked={adult} onChange={event => setAdult(event.target.checked)} required /> I’m 18 or older</label>
-            {data.challenge?.siteKey && <JoinChallenge key={challengeAttempt} siteKey={data.challenge.siteKey} onToken={setChallengeToken} />}
+            {data.challenge?.siteKey && <JoinChallenge key={challengeAttempt} siteKey={data.challenge.siteKey} theme={dark ? 'dark' : 'light'} onToken={setChallengeToken} />}
             {data.challenge?.required && !data.challenge.siteKey && <p role="status">Guest verification is temporarily unavailable.</p>}
             <button className="primary" disabled={busy || Boolean(data.challenge?.required && !challengeToken)}>Continue <ArrowRight size={18} /></button>
             <p className="privacy-note"><ShieldCheck size={16} /> Share only what you’re comfortable sharing.</p>
