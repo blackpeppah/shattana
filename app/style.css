@@ -100,6 +100,27 @@ nav button[aria-current] { border-bottom-color: var(--accent); }
 
 main { padding-block: 52px; }
 .discover { display: grid; grid-template-columns: 1.02fr 1fr; align-items: stretch; gap: 20px; }
+.discover-guide {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(20px, 5vw, 56px);
+  padding: clamp(20px, 3.5vw, 36px) var(--panel-inset);
+  border: 1px solid var(--line);
+  border-radius: 25px;
+  background: var(--surface);
+}
+.discover-guide h2 { margin-bottom: 12px; }
+.guide-rows { margin: 0; }
+.guide-row, .faq-row { border-top: 1px solid var(--line); }
+.guide-row { padding-block: 11px; }
+.guide-row dt, .faq-row summary { font-weight: 700; }
+.guide-row dd, .faq-row p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
+.faq-row summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding-block: 10px; cursor: pointer; list-style: none; }
+.faq-row summary::-webkit-details-marker { display: none; }
+.faq-row summary svg { flex: none; color: var(--accent); }
+.faq-row[open] summary svg { transform: rotate(180deg); }
+.faq-row p { margin: 0; padding-bottom: 12px; }
 .hero {
   position: relative;
   isolation: isolate;
@@ -364,6 +385,7 @@ legend { margin-bottom: 8px; padding: 0; }
   .presence-pill { font-size: 12px; }
   main { padding-block: 14px max(18px, env(safe-area-inset-bottom)); }
   .discover { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .discover-guide { grid-template-columns: minmax(0, 1fr); gap: 18px; border-radius: 20px; }
   .hero { min-height: 0; padding: clamp(18px, 5vw, 28px); border-radius: 20px; }
   h1 { font-size: clamp(38px, 10.8vw, 62px); margin: 10px 0 8px; }
   .hero p { font-size: 14px; }

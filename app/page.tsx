@@ -5,6 +5,7 @@ import { ArrowRight, Flag, Heart, MessageCircle, Moon, Shuffle, MapPin, ShieldCh
 import { drinks, genders, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
 import { afterHours } from './after-hours';
+import { DiscoverGuide } from './discover-guide';
 import { JoinChallenge } from './join-challenge';
 
 const openChatKey = 'shattana.open-chat';
@@ -456,6 +457,7 @@ export default function Home() {
             </form>
           </section>}
         </div>
+        {view === 'home' && !chat && !chatId && <DiscoverGuide />}
       </main>
     </div>
   );
