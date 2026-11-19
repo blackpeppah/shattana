@@ -9,7 +9,9 @@ import { DiscoverGuide } from './discover-guide';
 import { JoinChallenge } from './join-challenge';
 
 const openChatKey = 'shattana.open-chat';
+const barHiNotice = 'Hi sent. It stays private unless they say hi too.';
 type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; gender: string; matched: boolean; shot: boolean; barPending: boolean; peerTyping: boolean };
+type Message = { id: string; mine: boolean; body: string };
 type State = {
   profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; quickGender: string; waiting: boolean }) | null;
   challenge?: { required: boolean; siteKey?: string };
@@ -20,8 +22,14 @@ type State = {
   candidate?: BarCandidate;
   newBarChat?: string;
   advancedChat?: string;
-  messages?: { id: string; mine: boolean; body: string }[];
+  messages?: Message[];
 };
+
+function MessageBubbles({ messages = [] }: { messages?: Message[] }) {
+  const [history] = useState(() => new Set(messages.map(message => message.id)));
+  return messages.map(message => <p key={message.id}
+    className={`bubble${message.mine ? ' mine' : ''}${history.has(message.id) ? '' : ' motion-rise'}`}>{message.body}</p>);
+}
 
 export default function Home() {
   const [data, setData] = useState<State>();
@@ -49,6 +57,9 @@ export default function Home() {
   const [notice, setNotice] = useState('');
   const [endingQuickChat, setEndingQuickChat] = useState(false);
   const [matchAnnouncement, setMatchAnnouncement] = useState('');
+  const [connectingChat, setConnectingChat] = useState('');
+  const [sentShot, setSentShot] = useState('');
+  const [arrivingCard, setArrivingCard] = useState('');
   const composer = useRef<HTMLInputElement>(null);
   const thread = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLDivElement>(null);
@@ -116,7 +127,7 @@ export default function Home() {
   function showTapFeedback(event: PointerEvent<HTMLDivElement>) {
     if (event.pointerType === 'mouse' || !(event.target instanceof Element)) return;
     const control = event.target.closest<HTMLElement>('button:not(:disabled), .faq-row summary');
-    if (!control?.closest('.discover, .masthead')) return;
+    if (!control) return;
     clearTapFeedback();
     control.setAttribute('data-tap-pressed', '');
     pressedControl.current = control;
@@ -146,8 +157,12 @@ export default function Home() {
         const previousQuickChat = data?.active?.id;
         if (view === 'home' && previousQuickChat && payload.advancedChat === previousQuickChat) {
           await showEndedQuickChat();
+          if (payload.active) setConnectingChat(payload.active.id);
           setData(payload);
           return;
+        }
+        if (view === 'home' && waiting && payload.active && payload.active.id !== previousQuickChat) {
+          setConnectingChat(payload.active.id);
         }
         setData(payload);
         if (!data) setError('');
@@ -241,12 +256,18 @@ export default function Home() {
     try {
       const payload = await request(action, fields, chat?.id ?? chatId);
       if (action === 'next') await showEndedQuickChat();
+      if (['find', 'next', 'after-hours'].includes(action) && payload.active && payload.active.id !== chat?.id) {
+        setConnectingChat(payload.active.id);
+      }
+      if ((action === 'bar-next' || action === 'bar-hi') && payload.candidate && payload.candidate.id !== data?.candidate?.id) {
+        setArrivingCard(payload.candidate.id);
+      }
       setData(payload);
       if (action === 'report') setNotice('Report submitted. This guest has been blocked.');
       if (action === 'block') setNotice('This guest has been blocked.');
       if (action === 'bar-block') setNotice('This guest has been blocked.');
       if (action === 'bar-report') setNotice('Report submitted. This guest has been blocked.');
-      if (action === 'bar-hi' && !payload.newBarChat) setNotice('Hi sent. It stays private unless they say hi too.');
+      if (action === 'bar-hi' && !payload.newBarChat) setNotice(barHiNotice);
       if (action === 'bar-next' && typeof fields.target === 'string') setBarCursor(fields.target);
       if (action === 'bar-profile' || action === 'bar-reset') setBarCursor('');
       if (action === 'bar-profile') setEditingBar(false);
@@ -262,6 +283,7 @@ export default function Home() {
       }
       if (['find', 'next', 'leave', 'unmatch', 'block', 'report'].includes(action)) setChatId('');
       if (action === 'shot' && payload.selected?.matched) setChatId(payload.selected.id);
+      else if (action === 'shot' && payload.selected?.shot) setSentShot(payload.selected.id);
       return true;
     } catch (failure) {
       setError((failure as Error).message);
@@ -275,14 +297,17 @@ export default function Home() {
   function navigate(next: 'home' | 'matches') {
     setView(next);
     setChatId('');
+    setConnectingChat('');
+    setSentShot('');
     setError('');
     setNotice('');
   }
 
   async function chooseMode(next: 'quick' | 'bar') {
-    if (next === mode || (next === 'bar' && waiting && !await act('cancel'))) return;
+    if (requestInProgress.current || next === mode || (next === 'bar' && waiting && !await act('cancel'))) return;
     setMode(next);
     setBarCursor('');
+    setArrivingCard('');
     setEditingBar(false);
     setNotice('');
     setError('');
@@ -336,7 +361,7 @@ export default function Home() {
 
         <div className="panel">
           {error && <p className="error" role="alert">{error}</p>}
-          {notice && !chat && <p className="notice" role="status">{notice}</p>}
+          {notice && notice !== barHiNotice && !chat && <p className="notice" role="status">{notice}</p>}
           {!data && !error && <p role="status" className="card muted">Loading Shattana…</p>}
 
           {data && !joined && <form className="card entry" onSubmit={async event => {
@@ -359,9 +384,10 @@ export default function Home() {
             <p className="privacy-note"><ShieldCheck size={16} /> Share only what you’re comfortable sharing.</p>
           </form>}
 
-          {joined && view === 'home' && !chat && <div className="mode-choices" aria-label="How to meet">
-            <button className="secondary" aria-pressed={mode === 'quick'} disabled={busy} onClick={() => void chooseMode('quick')}><Shuffle size={17} /> Quick Chat</button>
-            <button className="secondary" aria-pressed={mode === 'bar'} disabled={busy} onClick={() => void chooseMode('bar')}><Heart size={17} /> Across the Bar</button>
+          {joined && view === 'home' && !chat && <div className="mode-choices" role="group" aria-label="How to meet" data-mode={mode}>
+            <span className="mode-indicator" aria-hidden="true" />
+            <button className="secondary" aria-pressed={mode === 'quick'} aria-disabled={busy} onClick={() => void chooseMode('quick')}><Shuffle size={17} /> Quick Chat</button>
+            <button className="secondary" aria-pressed={mode === 'bar'} aria-disabled={busy} onClick={() => void chooseMode('bar')}><Heart size={17} /> Across the Bar</button>
           </div>}
 
           {data?.profile && view === 'home' && !chat && <div className="discover-mode" key={mode}>
@@ -371,15 +397,22 @@ export default function Home() {
               : <>
                 <div className="card-head"><h2>Across the Bar</h2><p>A private hello. A chat opens when you both say hi.</p></div>
                 {data.candidate
-                  ? <BarCard candidate={data.candidate} busy={busy} report={barReport} setReport={setBarReport} act={act} />
+                  ? <BarCard candidate={data.candidate} animate={arrivingCard === data.candidate.id} busy={busy} report={barReport} setReport={setBarReport} act={act} />
                   : <p role="status">No more profiles fit both sets of preferences right now.</p>}
+                {notice === barHiNotice && <p className="notice bar-notice" role="status">{notice}</p>}
                 <div className="bar-controls">
                   <button className="secondary" disabled={busy} onClick={() => setEditingBar(true)}>Edit card and preferences</button>
                   {!data.candidate && barCursor && <button className="secondary" disabled={busy} onClick={() => void act('bar-reset')}>Start over</button>}
                 </div>
               </>}
           </section> : waiting
-            ? <section className="card waiting"><div className="tile-icon"><Shuffle size={23} /></div><h2 role="status">Finding someone…</h2><p>Keep this tab open. We’ll open the chat when someone joins.</p><button className="secondary" onClick={() => void act('cancel')} disabled={busy}>Cancel search</button></section>
+            ? <section className="card waiting">
+              <div className="tile-icon"><Shuffle size={23} /></div>
+              <h2 role="status">Finding someone…</h2>
+              <p>Keep this tab open. We’ll open the chat when someone joins.</p>
+              <div className="queue-progress" aria-hidden="true" />
+              <button className="secondary" onClick={() => void act('cancel')} disabled={busy}>Cancel search</button>
+            </section>
             : <section className="card discovery-card">
               <div className="card-head"><h2>Quick Chat</h2><p>Get paired at random. Choose an icebreaker or jump right in.</p></div>
               <fieldset className="fields"><label>Gender <span>(optional, visible in chat)</span>
@@ -407,7 +440,7 @@ export default function Home() {
             {!matches.length && <button className="primary" onClick={() => navigate('home')}>Find a Chat <ArrowRight size={18} /></button>}
           </section>}
 
-          {joined && chat && <section className="card conversation" key={chat.id}>
+          {joined && chat && <section className={`card conversation${connectingChat === chat.id ? ' motion-fade' : ''}`} key={chat.id}>
             <div className="chat-head">
               <div className="avatar" aria-hidden="true">{Array.from(chat.nickname)[0]}</div>
               <div className="peer"><h2>{chat.nickname}</h2><p>{[chat.gender, chat.matched ? 'Saved match' : chat.school || 'Quick Chat'].filter(Boolean).join(' · ')}</p></div>
@@ -442,7 +475,7 @@ export default function Home() {
               </>}
             </div>
             {!chat.matched && <div className="shot-control">
-              {chat.shot ? <p className="shot-note" role="status">Shot sent · only you can see this</p>
+              {chat.shot ? <p className={`shot-note${sentShot === chat.id ? ' motion-fade' : ''}`} role="status">Shot sent · only you can see this</p>
                 : <button className="secondary shot-button" disabled={busy || endingQuickChat} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
             </div>}
             <div className="thread" ref={thread} role="log" aria-label="Messages" tabIndex={0} onScroll={event => {
@@ -456,11 +489,11 @@ export default function Home() {
                   composer.current?.focus();
                 }}>g!</button>
               </div>}
-              {data?.messages?.map(message => <p className={message.mine ? 'bubble mine' : 'bubble'} key={message.id}>{message.body}</p>)}
+              <MessageBubbles messages={data?.messages} />
               {chat.peerTyping && !endingQuickChat && <div className="typing-bubble" role="status" aria-label={`${chat.nickname} is typing`}>
                 <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
               </div>}
-              {matchAnnouncement === chat.id && <p className="match-announcement">Ti, pareho kamo gali.</p>}
+              {matchAnnouncement === chat.id && <p className="match-announcement motion-fade">Ti, pareho kamo gali.</p>}
               {endingQuickChat && <p className="match-announcement" role="status">Chat ended. Looking for someone new…</p>}
             </div>
             <form className="composer" onSubmit={send}>

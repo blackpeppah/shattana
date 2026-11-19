@@ -1,3 +1,12 @@
+@property --paper { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --page-glow { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --surface { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --muted { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --line { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --thread-line { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --tint { syntax: '<color>'; inherits: true; initial-value: transparent; }
+
 :root {
   color-scheme: light;
   --paper: #faf2ea;
@@ -14,6 +23,8 @@
   --presence: #28734d;
   --interaction-speed: 160ms;
   --serif: Georgia, "Times New Roman", serif;
+  transition-property: --paper, --page-glow, --surface, --ink, --muted, --line, --thread-line, --tint;
+  transition-duration: var(--interaction-speed);
 }
 
 :root[data-theme=dark] {
@@ -126,16 +137,16 @@ main { padding-block: 52px; }
 .faq-toggle { flex: none; color: var(--accent); transition: transform var(--interaction-speed) ease; }
 .faq-row[open] .faq-toggle { transform: rotate(180deg); }
 .faq-row p { margin: 0; padding: 0 var(--faq-inset) 15px; }
-@supports selector(details::details-content) {
+@supports (interpolate-size: allow-keywords) and selector(details::details-content) {
   .faq-row::details-content {
-    display: grid;
-    grid-template-rows: 0fr;
-    opacity: 0;
-    transition: grid-template-rows var(--interaction-speed) ease, opacity var(--interaction-speed) ease,
-      content-visibility var(--interaction-speed) allow-discrete;
+    interpolate-size: allow-keywords;
+    overflow: clip;
+    contain: layout;
+    transition: block-size var(--interaction-speed) ease, opacity var(--interaction-speed) ease,
+      content-visibility var(--interaction-speed) allow-discrete, display var(--interaction-speed) allow-discrete;
   }
-  .faq-row[open]::details-content { grid-template-rows: 1fr; opacity: 1; }
-  .faq-answer { min-height: 0; overflow: hidden; }
+  .faq-row:not([open])::details-content { block-size: 0; opacity: 0; }
+  .faq-row[open]::details-content { block-size: auto; opacity: 1; }
 }
 .hero {
   position: relative;
@@ -187,8 +198,10 @@ h1 em { color: #ffc498; font-weight: inherit; }
 }
 .discover .panel:has(.mode-choices) { justify-content: flex-start; }
 .discover:has(.mode-choices) .hero { align-self: start; }
-.discover-mode { animation: discover-fade var(--interaction-speed) ease-out; }
+.discover-mode, .motion-fade { animation: discover-fade var(--interaction-speed) ease-out; }
+.motion-rise { animation: rise-in var(--interaction-speed) ease-out; }
 @keyframes discover-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .workspace .panel { max-width: 700px; margin-inline: auto; }
 .card { padding: var(--panel-inset); }
 .workspace .card {
@@ -253,9 +266,12 @@ legend { margin-bottom: 8px; padding: 0; }
 }
 .pills button[aria-pressed=true] { box-shadow: inset 0 0 0 1px var(--accent); }
 .tile-icon { display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 14px; border-radius: 16px; background: var(--tint); color: var(--accent); }
-.waiting .tile-icon { animation: search-pulse 2s ease-out infinite; }
-@keyframes search-pulse { from { box-shadow: 0 0 0 0 #85245038; } to { box-shadow: 0 0 0 12px #85245000; } }
-@media (prefers-reduced-motion: reduce) { .waiting .tile-icon { animation: none; } }
+.queue-progress { width: min(100%, 132px); height: 4px; margin-top: 14px; overflow: hidden; border-radius: 999px; background: var(--tint); }
+.queue-progress::after { display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--accent); content: ''; }
+@media (prefers-reduced-motion: no-preference) {
+  .queue-progress::after { animation: queue-sweep 1.25s ease-in-out infinite; }
+}
+@keyframes queue-sweep { from { transform: translateX(-100%); } to { transform: translateX(365%); } }
 .waiting .secondary { margin-top: 22px; }
 .error { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); overflow-wrap: anywhere; }
 .match, .match-name, .chat-head { display: flex; align-items: center; gap: 12px; }
@@ -360,9 +376,12 @@ legend { margin-bottom: 8px; padding: 0; }
 .notice { margin: 0 0 12px; padding: 10px 12px; border-radius: 11px; background: var(--tint); color: var(--accent); }
 .discover .panel > :is(.error, .notice) { margin: 16px var(--panel-inset) 0; }
 .mode-choices, .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.mode-choices { margin: 24px var(--panel-inset) 0; }
-.mode-choices button[aria-pressed=true] { border-color: var(--accent); background: var(--tint); color: var(--accent); }
-.mode-choices button { padding-inline: 8px; }
+.mode-choices { position: relative; margin: 24px var(--panel-inset) 0; }
+.mode-indicator { position: absolute; inset-block: 0; inset-inline-start: 0; width: calc((100% - 8px) / 2); border: 1px solid var(--accent); border-radius: 6px; background: var(--tint); pointer-events: none; transition: transform var(--interaction-speed) ease; }
+.mode-choices[data-mode=bar] .mode-indicator { transform: translateX(calc(100% + 8px)); }
+.mode-choices button { position: relative; padding-inline: 8px; background: transparent; }
+.mode-choices button[aria-disabled=true] { cursor: default; opacity: .6; }
+.mode-choices button[aria-pressed=true] { border-color: transparent; color: var(--accent); }
 .mode-choices svg { flex: none; }
 .discovery-card { padding-top: 24px; padding-bottom: 24px; }
 .fields select { display: block; width: 100%; min-width: 0; margin-top: 7px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
@@ -374,14 +393,16 @@ legend { margin-bottom: 8px; padding: 0; }
 .bar-answer { padding: 12px; border-radius: 12px; background: var(--paper); overflow-wrap: anywhere; }
 .bar-answer p { margin: 0 0 4px; font-size: 13px; }
 .bar-answer blockquote { margin: 0; }
+.bar-card-profile { block-size: 192px; margin: -3px; padding: 3px; overflow-y: auto; }
+.card .bar-notice { margin: 12px 0 0; color: var(--accent); }
 .bar-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .after-hours { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: auto var(--panel-inset) 24px; padding-top: 16px; border-top: 1px solid var(--line); }
 .after-hours p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 
-:is(.discover button, .masthead button, .theme-track, .faq-row summary) {
+:is(.discover button, .conversation button, .masthead button, .theme-track, .faq-row summary) {
   transition: background-color var(--interaction-speed), border-color var(--interaction-speed), color var(--interaction-speed);
 }
-:is(.discover button, .masthead button, .faq-row summary) { touch-action: manipulation; }
+:is(.discover button, .conversation button, .masthead button, .faq-row summary) { touch-action: manipulation; }
 @media (hover: hover) and (pointer: fine) {
   nav button:hover, .match:hover { color: var(--accent); }
   .primary:hover:not(:disabled) { background: var(--accent-hover); }
@@ -391,6 +412,8 @@ legend { margin-bottom: 8px; padding: 0; }
     color: var(--accent);
   }
   .faq-row summary:hover, .theme-switch:hover .theme-track { background: var(--tint); }
+  .mode-choices button:hover:not(:disabled) { background: transparent; }
+  .mode-choices button[aria-pressed=true]:hover:not(:disabled) { border-color: transparent; }
 }
 .primary[data-tap-pressed]:not(:disabled) { background: var(--accent-hover); transition-duration: 0s; }
 .secondary[data-tap-pressed]:not(:disabled), .pills button[data-tap-pressed]:not(:disabled) {
@@ -405,7 +428,7 @@ legend { margin-bottom: 8px; padding: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   :root { --interaction-speed: 0ms; }
-  .discover-mode { animation: none; }
+  .discover-mode, .motion-fade, .motion-rise { animation: none; }
 }
 
 @media (max-width: 760px) {
@@ -451,6 +474,7 @@ legend { margin-bottom: 8px; padding: 0; }
 }
 
 @media (max-width: 480px) {
+  .bar-card-profile { block-size: 224px; }
   .guide-cards { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .masthead { flex-wrap: wrap; column-gap: 10px; row-gap: 0; }
   .masthead nav { order: 1; flex: 1 0 100%; min-height: 44px; margin: 0; }

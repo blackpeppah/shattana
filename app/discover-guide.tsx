@@ -29,7 +29,7 @@ export function DiscoverGuide() {
       <div className="faq-rows">
         {questions.map(([question, answer]) => <details key={question} className="faq-row">
           <summary>{question}<ChevronDown className="faq-toggle" size={17} aria-hidden="true" /></summary>
-          <div className="faq-answer"><p>{answer}</p></div>
+          <p>{answer}</p>
         </details>)}
       </div>
     </section>

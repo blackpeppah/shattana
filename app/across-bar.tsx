@@ -49,18 +49,20 @@ export function BarSetup({ profile, busy, save }: {
   </form>;
 }
 
-export function BarCard({ candidate, busy, report, setReport, act }: {
-  candidate: BarCandidate; busy: boolean; report: boolean; setReport: (open: boolean) => void;
+export function BarCard({ candidate, animate, busy, report, setReport, act }: {
+  candidate: BarCandidate; animate: boolean; busy: boolean; report: boolean; setReport: (open: boolean) => void;
   act: (action: string, fields?: Record<string, unknown>) => Promise<boolean>;
 }) {
   const target = candidate.id;
   return <>
+    <div className={`bar-card-profile${animate ? ' motion-rise' : ''}`} key={target}>
     <div className="chat-head">
       <div className="avatar" aria-hidden="true">{Array.from(candidate.nickname)[0]}</div>
       <div className="peer"><h3>{candidate.nickname}</h3><p className="candidate-spot"><MapPin size={14} /> {candidate.favorite}</p></div>
       <button className="icon-button" aria-label="Report or block profile" aria-expanded={report} onClick={() => setReport(!report)}><Flag size={18} /></button>
     </div>
     <div className="bar-answer"><p>{barPrompt}</p><blockquote>{candidate.answer}</blockquote></div>
+    </div>
     {report && <div className="report"><strong>Report or block this profile</strong><div className="pills">
       {reasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('bar-report', { target, reason })}>{reason}</button>)}
       <button disabled={busy} onClick={() => void act('bar-block', { target })}>Block</button>
