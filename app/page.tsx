@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, ArrowUp, Flag, Heart, MessageCircle, Shuffle, MapPin, ShieldCheck, Sparkles, X } from 'lucide-react';
-import { drinks, icebreakers, spots, reasons } from './options';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { ArrowRight, Flag, Heart, MessageCircle, Shuffle, MapPin, ShieldCheck } from 'lucide-react';
+import { drinks, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
 import { afterHours } from './after-hours';
 
+const openChatKey = 'shattana.open-chat';
 type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; matched: boolean; shot: boolean; barPending: boolean };
 type State = {
   profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; waiting: boolean }) | null;
@@ -35,10 +36,12 @@ export default function Home() {
   const [error, setError] = useState('');
   const [report, setReport] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [promptIndex, setPromptIndex] = useState(0);
   const [notice, setNotice] = useState('');
+  const [matchAnnouncement, setMatchAnnouncement] = useState('');
   const composer = useRef<HTMLInputElement>(null);
   const thread = useRef<HTMLDivElement>(null);
+  const shell = useRef<HTMLDivElement>(null);
+  const previousChat = useRef<Chat | undefined>(undefined);
   const followThread = useRef(true);
   const revision = useRef(0);
   const requestInProgress = useRef(false);
@@ -49,6 +52,7 @@ export default function Home() {
   const waiting = Boolean(data?.profile?.waiting);
   const joined = Boolean(data?.profile);
   const lastMessage = data?.messages?.at(-1)?.id;
+  const inConversation = Boolean(chat);
 
   async function request(action?: string, fields: Record<string, unknown> = {}, selected = chatId) {
     const params = new URLSearchParams();
@@ -65,6 +69,11 @@ export default function Home() {
     if (!response.ok) throw new Error(payload.error || 'Please try again.');
     return payload as State;
   }
+
+  useEffect(() => {
+    const savedChat = sessionStorage.getItem(openChatKey);
+    if (savedChat) setChatId(savedChat);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -118,10 +127,46 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => { setBarReport(false); }, [data?.candidate?.id, mode]);
-  useEffect(() => { setReport(false); setDraft(''); setPromptIndex(0); followThread.current = true; }, [chat?.id]);
+  useEffect(() => { setReport(false); setDraft(''); }, [chat?.id]);
+  useLayoutEffect(() => { followThread.current = true; }, [chat?.id]);
   useEffect(() => {
+    const previous = previousChat.current;
+    if (chat?.id !== previous?.id) setMatchAnnouncement('');
+    if (chat?.matched && !chat.barPending && previous?.id === chat.id && !previous.matched) {
+      setMatchAnnouncement(chat.id);
+    }
+    previousChat.current = chat;
+    if (chat) sessionStorage.setItem(openChatKey, chat.id);
+    else if (data && !chatId) sessionStorage.removeItem(openChatKey);
+  }, [chat, chatId, data]);
+
+  useLayoutEffect(() => {
     if (thread.current && followThread.current) thread.current.scrollTop = thread.current.scrollHeight;
-  }, [lastMessage, chat?.id]);
+  }, [lastMessage, chat?.id, matchAnnouncement]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const element = shell.current;
+    if (!inConversation || !viewport || !element) return;
+    const chatViewport = viewport;
+    const chatShell = element;
+    function update() {
+      chatShell.style.setProperty('--chat-viewport-height', `${chatViewport.height}px`);
+      chatShell.style.setProperty('--chat-viewport-top', `${chatViewport.offsetTop}px`);
+      chatShell.toggleAttribute('data-compact', chatViewport.height < 360);
+      if (thread.current && followThread.current) thread.current.scrollTop = thread.current.scrollHeight;
+    }
+    update();
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    return () => {
+      viewport.removeEventListener('resize', update);
+      viewport.removeEventListener('scroll', update);
+      element.style.removeProperty('--chat-viewport-height');
+      element.style.removeProperty('--chat-viewport-top');
+      element.removeAttribute('data-compact');
+    };
+  }, [inConversation]);
 
   async function act(action: string, fields: Record<string, unknown> = {}) {
     if (requestInProgress.current) return false;
@@ -142,6 +187,10 @@ export default function Home() {
       if (action === 'bar-profile' || action === 'bar-reset') setBarCursor('');
       if (action === 'bar-profile') setEditingBar(false);
       if (payload.newBarChat) setChatId(payload.newBarChat);
+      if (action === 'leave' || action === 'next') {
+        setView('home');
+        setMode('quick');
+      }
       if (action === 'leave') setNotice('You left the conversation.');
       if (['find', 'next', 'leave', 'block', 'report'].includes(action)) setChatId('');
       if (action === 'shot' && payload.selected?.matched) setChatId(payload.selected.id);
@@ -174,17 +223,14 @@ export default function Home() {
   async function send(event: FormEvent) {
     event.preventDefault();
     if (!draft.trim()) return;
-    followThread.current = true;
     if (await act('send', { body: draft })) setDraft('');
   }
 
-  const opener = spot && spot === chat?.spot
-    ? `${spot} man gali. Sin-o mauna mag-hi?`
-    : chat?.spot ? `Favorite spot ni ${chat.nickname} ang ${chat.spot}. Paano mo siya i-hi?`
-    : drink && drink === chat?.drink ? `${drink} kamo pareho. Sin-o mauna mag-hi?` : 'Hi lang anay. Sin-o mauna?';
+  const mySpot = data?.profile?.spot;
+  const opener = mySpot && mySpot === chat?.spot ? `${mySpot} man gali. Sin-o mauna mag-hi?` : 'Hi lang anay. Sin-o mauna?';
 
   return (
-    <div className="shell">
+    <div ref={shell} className={chat ? 'shell chat-shell' : 'shell'}>
       <header className="masthead">
         <button className="brand" onClick={() => navigate('home')}>shattana<span>!</span></button>
         {joined && <nav aria-label="Main navigation">
@@ -266,39 +312,42 @@ export default function Home() {
           {joined && chat && <section className="card conversation" key={chat.id}>
             <div className="chat-head">
               <div className="avatar" aria-hidden="true">{Array.from(chat.nickname)[0]}</div>
-              <div className="peer"><h2>{chat.nickname}</h2><p>{chat.matched ? 'Match kamo!' : chat.school || 'Random chat'}</p></div>
-              <button className="icon-button" aria-label="Report or block" aria-expanded={report} onClick={() => setReport(!report)}><Flag size={18} /></button>
-              <button className="icon-button" disabled={busy} aria-label={chat.matched ? 'Back to Matches' : 'Leave chat'} onClick={async () => {
+              <div className="peer"><h2>{chat.nickname}</h2><p>{chat.matched ? 'Saved match' : chat.school || 'Quick Chat'}</p></div>
+            </div>
+            <div className="chat-controls">
+              <button className="secondary" disabled={busy} onClick={async () => {
                 if (!chat.matched) { await act('leave'); return; }
                 if (!chat.barPending || await act('bar-dismiss')) navigate('matches');
-              }}><X size={20} /></button>
+              }}>{chat.matched ? 'Back to Matches' : 'Leave chat'}</button>
+              {!chat.matched && <button className="secondary" disabled={busy} onClick={() => void act('next')}>Next chat</button>}
+              <button className="secondary chat-menu" aria-controls="chat-moderation" aria-expanded={report} onClick={() => setReport(!report)}><Flag size={16} /> Chat menu</button>
             </div>
-            {report && <div className="report"><strong>Report or block</strong><p>Reporting also ends the chat and blocks this guest.</p><div className="pills">
+            <div id="chat-moderation" className="report" hidden={!report}><strong>Block or Report</strong><p>Choose a report reason, or block this guest. Both end the conversation.</p><div className="pills">
               {reasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('report', { reason })}>{reason}</button>)}
               <button disabled={busy} onClick={() => void act('block')}>Block</button>
-            </div></div>}
-            {chat.matched && <p className="match-banner" role="status"><Heart size={17} /> It’s mutual. This chat is saved in Matches.</p>}
+            </div></div>
+            {!chat.matched && <div className="shot-control">
+              {chat.shot ? <p className="shot-note" role="status">Shot sent · only you can see this</p>
+                : <button className="secondary shot-button" disabled={busy} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
+            </div>}
             <div className="thread" ref={thread} role="log" aria-label="Messages" tabIndex={0} onScroll={event => {
               const log = event.currentTarget;
               followThread.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
             }}>
-              {!data?.messages?.length && <p className="opener"><MessageCircle size={16} /> {opener}</p>}
+              {!data?.messages?.length && !chat.matched && <div className="first-message">
+                <p>{opener}</p>
+                <button type="button" className="secondary" onClick={() => {
+                  if (!draft) setDraft('Hi lang anay 👀');
+                  composer.current?.focus();
+                }}>Hi lang anay 👀</button>
+              </div>}
               {data?.messages?.map(message => <p className={message.mine ? 'bubble mine' : 'bubble'} key={message.id}>{message.body}</p>)}
+              {matchAnnouncement === chat.id && <p className="match-announcement">Ti, pareho kamo gali.</p>}
             </div>
-            {!data?.messages?.length && !chat.matched && <div className="icebreaker">
-              <div><Sparkles size={17} /><p>{icebreakers[promptIndex]}</p></div>
-              <button type="button" className="icon-button" aria-label="Shuffle icebreaker" onClick={() => setPromptIndex((promptIndex + 1) % icebreakers.length)}><Shuffle size={16} /></button>
-              <button type="button" className="secondary" disabled={Boolean(draft.trim())} onClick={() => { setDraft(icebreakers[promptIndex]); composer.current?.focus(); }}>Use prompt</button>
-            </div>}
             <form className="composer" onSubmit={send}>
               <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy} value={draft} onChange={event => setDraft(event.target.value)} />
-              <button className="send" aria-label="Send message" disabled={busy || !draft.trim()}><ArrowUp size={22} /></button>
+              <button className="primary send" disabled={busy || !draft.trim()}>Send</button>
             </form>
-            {!chat.matched && <div className="actions">
-              <button className="secondary" disabled={busy} onClick={() => void act('next')}><Shuffle size={17} /> Next</button>
-              <button className="primary" disabled={busy || chat.shot} onClick={() => void act('shot')}><Heart size={17} /> {chat.shot ? 'Shot sent' : 'Shoot Your Shot'}</button>
-            </div>}
-            {!chat.matched && <p className="shot-note">Your shot stays private unless you both tap.</p>}
           </section>}
         </div>
       </main>

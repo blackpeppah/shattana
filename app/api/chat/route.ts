@@ -55,7 +55,10 @@ async function handle(req: NextRequest, write: boolean) {
       const [search] = action === 'heartbeat' ? await query("select id from guest where id=$1 and queued_at>now()-interval '35 seconds'", [id]) : [];
       if (action === 'find' || action === 'next' || search) {
         if (action === 'next') {
-          await query('update chat set closed=true where (a=$1 or b=$1) and not matched and not closed', [id]);
+          if (!uuid(input.chatId)) throw new InputError('Choose a conversation.');
+          const [closed] = await query(`update chat set closed=true where id=$2
+            and (a=$1 or b=$1) and not matched and not closed returning id`, [id, input.chatId]);
+          if (!closed) throw new InputError('This Quick Chat has ended.');
         } else if (action === 'find') {
           await query('update guest set drink=$2,spot=$3 where id=$1',
             [id, drinks.includes(input.drink) ? input.drink : '', spots.includes(input.spot) ? input.spot : '']);
