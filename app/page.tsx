@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowDownRight, ArrowRight, ArrowUp, Flag, Heart, MessageCircle, Shuffle, Sparkles, UserRound, X } from 'lucide-react';
+import { ArrowRight, ArrowUp, Flag, Heart, MessageCircle, Shuffle, MapPin, X } from 'lucide-react';
 import { drinks, spots, reasons } from './options';
 
 type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; matched: boolean; shot: boolean };
@@ -129,84 +129,78 @@ export default function Home() {
 
   return (
     <div className="shell">
-      <header>
-        <button className="brand" onClick={() => navigate('home')}><span className="brand-icon"><Heart size={17} fill="currentColor" /></span> shattana<span>!</span></button>
+      <header className="masthead">
+        <button className="brand" onClick={() => navigate('home')}>shattana<span>!</span></button>
         {joined && <nav aria-label="Main navigation">
-          <button className={view === 'home' ? 'nav-active' : ''} onClick={() => navigate('home')}><Shuffle size={16} /> Discover</button>
-          <button className={view === 'matches' ? 'nav-active' : ''} onClick={() => navigate('matches')}><Heart size={16} /> Matches {matches.length > 0 && <span className="count">{matches.length}</span>}</button>
+          <button aria-current={view === 'home' ? 'page' : undefined} onClick={() => navigate('home')}><Shuffle size={16} /> Discover</button>
+          <button aria-current={view === 'matches' ? 'page' : undefined} onClick={() => navigate('matches')}><Heart size={16} /> Matches {matches.length > 0 && <span className="count">{matches.length}</span>}</button>
         </nav>}
-        <span className="age">18+</span>
+        <span className="age"><span className="age-location">Bacolod <span aria-hidden="true">/</span> </span>18+</span>
       </header>
 
-      <main>
+      <main className={view === 'home' && !chat ? 'discover' : 'workspace'}>
         {view === 'home' && !chat && <section className="hero">
-          <div className="locale"><span /> BCD AFTER HOURS</div>
+          <div className="locale"><MapPin size={15} /> Bacolod City</div>
           <h1>Hi lang anay.<br /><em>Basi ikaw na.</em></h1>
-          <p>One hello could change your night.</p>
-          <div className="hero-art" aria-hidden="true">
-            <div className="orbit orbit-outer" /><div className="orbit orbit-inner" />
-            <Sparkles className="star star-one" size={31} /><Sparkles className="star star-two" size={19} />
-            <div className="sticker sticker-back"><MessageCircle size={69} strokeWidth={1.4} /></div>
-            <div className="sticker sticker-front"><Heart size={71} strokeWidth={1.4} fill="currentColor" /></div>
-            <ArrowDownRight className="art-arrow" size={33} strokeWidth={1.5} />
-          </div>
+          <p>Meet someone from Bacolod in a one-on-one chat.</p>
         </section>}
 
-        {error && <p className="error" role="alert">{error}</p>}
-        {!data && !error && <p role="status" className="muted">Loading Shattana…</p>}
+        <div className="panel">
+          {error && <p className="error" role="alert">{error}</p>}
+          {!data && !error && <p role="status" className="card muted">Loading Shattana…</p>}
 
-        {data && !joined && <form className="card entry" onSubmit={event => { event.preventDefault(); void act('join', { nickname, school, adult }); }}>
-          <div className="card-head"><div className="tile-icon"><UserRound size={22} /></div><div><h2>Join as a guest</h2><p>Pick a nickname to start chatting.</p></div></div>
-          <div className="fields">
-            <label>Nickname<input required maxLength={24} value={nickname} onChange={event => setNickname(event.target.value)} placeholder="e.g. Kai" /></label>
-            <label>School <span>(optional)</span><input maxLength={60} value={school} onChange={event => setSchool(event.target.value)} placeholder="Your school" /></label>
-          </div>
-          <label className="check"><input type="checkbox" checked={adult} onChange={event => setAdult(event.target.checked)} required /> I’m 18 or older</label>
-          <button className="primary" disabled={busy}>Continue <ArrowRight size={18} /></button>
-        </form>}
+          {data && !joined && <form className="card entry" onSubmit={event => { event.preventDefault(); void act('join', { nickname, school, adult }); }}>
+            <div className="card-head"><h2>Join as a guest</h2><p>Your nickname is what people see in chat.</p></div>
+            <div className="fields">
+              <label>Nickname<input required maxLength={24} value={nickname} onChange={event => setNickname(event.target.value)} placeholder="e.g. Kai" /></label>
+              <label>School <span>(optional)</span><input maxLength={60} value={school} onChange={event => setSchool(event.target.value)} placeholder="Your school" /></label>
+            </div>
+            <label className="check"><input type="checkbox" checked={adult} onChange={event => setAdult(event.target.checked)} required /> I’m 18 or older</label>
+            <button className="primary" disabled={busy}>Continue <ArrowRight size={18} /></button>
+          </form>}
 
-        {joined && view === 'home' && !chat && (waiting
-          ? <section className="card waiting"><div className="tile-icon"><Shuffle size={23} /></div><h2>Finding someone…</h2><p>Wala pa may ka-chat. Hang tight or try again in a bit.</p><button className="secondary" onClick={() => void act('cancel')} disabled={busy}>Cancel search</button></section>
-          : <section className="card">
-            <div className="card-head"><div className="tile-icon"><Sparkles size={22} /></div><div><h2>Set your vibe</h2><p>Pick an icebreaker or jump right in.</p></div></div>
-            <fieldset><legend>What’s your round?</legend><div className="pills">{drinks.map(option => <button type="button" key={option} aria-pressed={drink === option} onClick={() => setDrink(drink === option ? '' : option)}>{option}</button>)}</div></fieldset>
-            <fieldset><legend>Where’s your spot?</legend><div className="pills">{spots.map(option => <button type="button" key={option} aria-pressed={spot === option} onClick={() => setSpot(spot === option ? '' : option)}>{option}</button>)}</div></fieldset>
-            <button className="primary" disabled={busy} onClick={() => void act('find', { drink, spot })}>Find a Chat <ArrowRight size={19} /></button>
-          </section>)}
+          {joined && view === 'home' && !chat && (waiting
+            ? <section className="card waiting"><div className="tile-icon"><Shuffle size={23} /></div><h2 role="status">Finding someone…</h2><p>Keep this tab open. We’ll open the chat when someone joins.</p><button className="secondary" onClick={() => void act('cancel')} disabled={busy}>Cancel search</button></section>
+            : <section className="card">
+              <div className="card-head"><h2>Find a chat</h2><p>Choose an icebreaker or start right away.</p></div>
+              <fieldset><legend>What’s your round? <span>Optional</span></legend><div className="pills">{drinks.map(option => <button type="button" key={option} aria-pressed={drink === option} onClick={() => setDrink(drink === option ? '' : option)}>{option}</button>)}</div></fieldset>
+              <fieldset><legend>Where’s your spot? <span>Optional</span></legend><div className="pills spot-options">{spots.map(option => <button type="button" key={option} aria-pressed={spot === option} onClick={() => setSpot(spot === option ? '' : option)}>{option}</button>)}</div></fieldset>
+              <button className="primary" disabled={busy} onClick={() => void act('find', { drink, spot })}>{busy ? 'Starting…' : 'Find a Chat'} <ArrowRight size={19} /></button>
+            </section>)}
 
-        {joined && view === 'matches' && !chat && <section className="card">
-          <div className="card-head"><div className="tile-icon"><Heart size={22} /></div><div><h2>Matches</h2><p>{matches.length ? 'Pick up where you left off.' : 'When you both shoot your shot, your chat lands here.'}</p></div></div>
-          {matches.map(match => <button className="match" key={match.id} onClick={() => setChatId(match.id)}><span>{match.nickname}</span><ArrowRight size={18} /></button>)}
-          {!matches.length && <button className="primary" onClick={() => navigate('home')}>Find a Chat <ArrowRight size={18} /></button>}
-        </section>}
+          {joined && view === 'matches' && !chat && <section className="card">
+            <div className="card-head"><h2>Matches</h2>{!matches.length && <p>When you both shoot your shot, your chat lands here.</p>}</div>
+            {matches.map(match => <button className="match" key={match.id} onClick={() => setChatId(match.id)}><span className="match-name"><span className="avatar" aria-hidden="true">{Array.from(match.nickname)[0]}</span>{match.nickname}</span><ArrowRight size={18} /></button>)}
+            {!matches.length && <button className="primary" onClick={() => navigate('home')}>Find a Chat <ArrowRight size={18} /></button>}
+          </section>}
 
-        {joined && chat && <section className="card conversation" key={chat.id}>
-          <div className="chat-head">
-            <div className="tile-icon">{chat.matched ? <Heart size={22} /> : <MessageCircle size={22} />}</div>
-            <div className="peer"><h2>{chat.nickname}</h2><p>{chat.matched ? 'Match kamo!' : chat.school || 'Random chat'}</p></div>
-            <button className="icon-button" aria-label="Report or block" onClick={() => setReport(!report)}><Flag size={18} /></button>
-            {chat.matched && <button className="icon-button" aria-label="Close conversation" onClick={() => navigate('matches')}><X size={20} /></button>}
-          </div>
-          {report && <div className="report"><strong>Report or block</strong><p>Reporting also ends the chat and blocks this guest.</p><div className="pills">
-            {reasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('report', { reason })}>{reason}</button>)}
-            <button disabled={busy} onClick={() => void act('block')}>Block</button>
-          </div></div>}
-          <div className="thread" role="log" aria-label="Messages">
-            <p className="opener"><Sparkles size={15} /> {opener}</p>
-            {data?.messages?.map(message => <p className={message.mine ? 'bubble mine' : 'bubble'} key={message.id}>{message.body}</p>)}
-            <div ref={bottom} />
-          </div>
-          <form className="composer" onSubmit={send}>
-            <input aria-label="Message" placeholder="Say hi…" maxLength={1000} value={draft} onChange={event => setDraft(event.target.value)} />
-            <button className="send" aria-label="Send message" disabled={busy || !draft.trim()}><ArrowUp size={22} /></button>
-          </form>
-          {!chat.matched && <div className="actions">
-            <button className="secondary" disabled={busy} onClick={() => void act('next')}><Shuffle size={17} /> Next</button>
-            <button className="primary" disabled={busy || chat.shot} onClick={() => void act('shot')}><Heart size={17} /> {chat.shot ? 'Shot sent' : 'Shoot Your Shot'}</button>
-          </div>}
-        </section>}
+          {joined && chat && <section className="card conversation" key={chat.id}>
+            <div className="chat-head">
+              <div className="avatar" aria-hidden="true">{Array.from(chat.nickname)[0]}</div>
+              <div className="peer"><h2>{chat.nickname}</h2><p>{chat.matched ? 'Match kamo!' : chat.school || 'Random chat'}</p></div>
+              <button className="icon-button" aria-label="Report or block" aria-expanded={report} onClick={() => setReport(!report)}><Flag size={18} /></button>
+              {chat.matched && <button className="icon-button" aria-label="Close conversation" onClick={() => navigate('matches')}><X size={20} /></button>}
+            </div>
+            {report && <div className="report"><strong>Report or block</strong><p>Reporting also ends the chat and blocks this guest.</p><div className="pills">
+              {reasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('report', { reason })}>{reason}</button>)}
+              <button disabled={busy} onClick={() => void act('block')}>Block</button>
+            </div></div>}
+            <div className="thread" role="log" aria-label="Messages">
+              <p className="opener"><MessageCircle size={16} /> {opener}</p>
+              {data?.messages?.map(message => <p className={message.mine ? 'bubble mine' : 'bubble'} key={message.id}>{message.body}</p>)}
+              <div ref={bottom} />
+            </div>
+            <form className="composer" onSubmit={send}>
+              <input aria-label="Message" placeholder="Say hi…" maxLength={1000} value={draft} onChange={event => setDraft(event.target.value)} />
+              <button className="send" aria-label="Send message" disabled={busy || !draft.trim()}><ArrowUp size={22} /></button>
+            </form>
+            {!chat.matched && <div className="actions">
+              <button className="secondary" disabled={busy} onClick={() => void act('next')}><Shuffle size={17} /> Next</button>
+              <button className="primary" disabled={busy || chat.shot} onClick={() => void act('shot')}><Heart size={17} /> {chat.shot ? 'Shot sent' : 'Shoot Your Shot'}</button>
+            </div>}
+          </section>}
+        </div>
       </main>
-      <footer><span>Shattana!</span><span>Made for BCD <Heart size={13} /></span></footer>
     </div>
   );
 }
