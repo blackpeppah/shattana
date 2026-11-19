@@ -276,8 +276,8 @@ export default function Home() {
           <h1>down for a drink? <em>g!</em></h1>
           <p>yap and i’m giving u shots</p>
           <div className="hero-preview" aria-hidden="true">
-            <span className="preview-bubble">Hi! Ari ka man sa BCD? <span>✦</span></span>
-            <span className="preview-bubble preview-reply">Oo! Diin ta? <span>♡</span></span>
+            <span className="preview-bubble">one drink or a whole yap session? <span>✦</span></span>
+            <span className="preview-bubble preview-reply">both. g! <span>♡</span></span>
           </div>
         </section>}
 
