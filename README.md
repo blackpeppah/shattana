@@ -39,6 +39,6 @@ order by r.created_at desc;
 
 Reporting also blocks the guest and closes the conversation. Assign someone to handle reports before opening the pilot publicly. The guest cookie is the account identifier, so a fresh browser or cleared cookie can create a new identity. A public rollout needs stronger protections against repeat abuse.
 
-Quick Chat pairs guests at random. Across the Bar uses a separate nickname card with a favorite hangout and prompt answer. Age, gender, and preferences are used privately to check compatibility both ways. A Say Hi is private until it’s mutual, then the chat appears in Matches. After Hours starts Fridays at 9 PM in Bacolod and uses the same Quick Chat queue.
+Quick Chat pairs guests at random. Guests who chatted without matching can meet again two minutes after their chat ends. Across the Bar uses a separate nickname card with a favorite hangout and prompt answer. Age, gender, and preferences are used privately to check compatibility both ways. A Say Hi is private until it’s mutual, then the chat appears in Matches. After Hours starts Fridays at 9 PM in Bacolod and uses the same Quick Chat queue.
 
 The current build uses plain CSS and text only. It needs no SMS, email, video provider, paid API, or custom domain.

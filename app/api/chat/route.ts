@@ -96,7 +96,7 @@ async function handle(req: NextRequest, write: boolean) {
             and not exists (select 1 from block where (actor=$1 and target=g.id) or (actor=g.id and target=$1))
             and not exists (select 1 from report where (actor=$1 and target=g.id) or (actor=g.id and target=$1))
             and not exists (select 1 from chat where (a=g.id or b=g.id) and not matched and not closed)
-            and (history.encounters=0 or (not history.matched and history.last_chat <= now()-interval '10 minutes'))
+            and (history.encounters=0 or (not history.matched and history.last_chat <= now()-interval '2 minutes'))
             order by (history.encounters<>0),
               -ln(1-random()) / (1+greatest(0,extract(epoch from now()-g.queued_at))/30)
             limit 1`, [id]);
