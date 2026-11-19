@@ -5,11 +5,13 @@ import { ArrowRight, Flag, Heart, MessageCircle, Shuffle, MapPin, ShieldCheck } 
 import { drinks, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
 import { afterHours } from './after-hours';
+import { JoinChallenge } from './join-challenge';
 
 const openChatKey = 'shattana.open-chat';
 type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; matched: boolean; shot: boolean; barPending: boolean };
 type State = {
   profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; waiting: boolean }) | null;
+  challenge?: { required: boolean; siteKey?: string };
   active?: Chat;
   selected?: Chat;
   matches?: Chat[];
@@ -30,6 +32,8 @@ export default function Home() {
   const [nickname, setNickname] = useState('');
   const [school, setSchool] = useState('');
   const [adult, setAdult] = useState(false);
+  const [challengeToken, setChallengeToken] = useState('');
+  const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [drink, setDrink] = useState('');
   const [spot, setSpot] = useState('');
   const [draft, setDraft] = useState('');
@@ -256,14 +260,23 @@ export default function Home() {
           {notice && !chat && <p className="notice" role="status">{notice}</p>}
           {!data && !error && <p role="status" className="card muted">Loading Shattana…</p>}
 
-          {data && !joined && <form className="card entry" onSubmit={event => { event.preventDefault(); void act('join', { nickname, school, adult }); }}>
+          {data && !joined && <form className="card entry" onSubmit={async event => {
+            event.preventDefault();
+            if (data.challenge?.required && !challengeToken) return;
+            if (!await act('join', { nickname, school, adult, challengeToken }) && data.challenge?.siteKey) {
+              setChallengeToken('');
+              setChallengeAttempt(attempt => attempt + 1);
+            }
+          }}>
             <div className="card-head"><span className="tile-icon"><MessageCircle size={22} /></span><h2>Join as a guest</h2><p>Pick a nickname to get started.</p></div>
             <div className="fields">
               <label>Nickname<input required maxLength={24} value={nickname} onChange={event => setNickname(event.target.value)} placeholder="e.g. Kai" /></label>
               <label>School <span>(optional, visible in chat)</span><input maxLength={60} value={school} onChange={event => setSchool(event.target.value)} placeholder="Your school" /></label>
             </div>
             <label className="check"><input type="checkbox" checked={adult} onChange={event => setAdult(event.target.checked)} required /> I’m 18 or older</label>
-            <button className="primary" disabled={busy}>Continue <ArrowRight size={18} /></button>
+            {data.challenge?.siteKey && <JoinChallenge key={challengeAttempt} siteKey={data.challenge.siteKey} onToken={setChallengeToken} />}
+            {data.challenge?.required && !data.challenge.siteKey && <p role="status">Guest verification is temporarily unavailable.</p>}
+            <button className="primary" disabled={busy || Boolean(data.challenge?.required && !challengeToken)}>Continue <ArrowRight size={18} /></button>
             <p className="privacy-note"><ShieldCheck size={16} /> Share only what you’re comfortable sharing.</p>
           </form>}
 

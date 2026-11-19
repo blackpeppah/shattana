@@ -30,12 +30,28 @@ async function localDatabase() {
   return db;
 }
 
+function createPool(connectionString: string) {
+  const url = new URL(connectionString);
+  const ca = process.env.DATABASE_CA_CERT?.trim().replace(/\\n/g, '\n');
+  const supabase = url.hostname.endsWith('.supabase.co') || url.hostname.endsWith('.pooler.supabase.com');
+  if (supabase || ca) {
+    // pg lets URL SSL parameters override the supplied TLS options.
+    for (const option of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'ssl', 'uselibpqcompat']) url.searchParams.delete(option);
+  }
+  return new Pool({
+    connectionString: url.href,
+    max: 2,
+    connectionTimeoutMillis: 5000,
+    ssl: supabase || ca ? { rejectUnauthorized: true, ...(ca ? { ca } : {}) } : undefined,
+  });
+}
+
 export async function transact<T>(write: boolean, work: (query: Query) => Promise<T>) {
   if (!process.env.DATABASE_URL) {
     if (process.env.VERCEL) throw new Error('DATABASE_URL is required on Vercel');
     return (await localDatabase()).transaction(tx => work(async (sql, args) => (await tx.query(sql, args)).rows as never));
   }
-  runtime.shattanaPool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000 });
+  runtime.shattanaPool ??= createPool(process.env.DATABASE_URL);
   const client = await runtime.shattanaPool.connect();
   let discard = false;
   try {

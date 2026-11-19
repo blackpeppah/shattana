@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { transact } from '../../../db/store';
 import { barGenders, barInterests, drinks, spots, reasons } from '../../options';
+import { challengeConfig, verifyJoinChallenge } from './turnstile';
 
 const cookie = 'shattana_guest';
 const clean = (value: unknown, max: number) => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -30,6 +31,15 @@ async function handle(req: NextRequest, write: boolean) {
     }
     const input = write ? await req.json().catch(() => null) : {};
     if (!input || typeof input !== 'object') throw new InputError('Invalid request.');
+    const challenge = challengeConfig();
+    if (input.action === 'join' && challenge.required) {
+      if (!challenge.secret) throw new Error('Turnstile signup keys are missing or invalid');
+      if (!clean(input.nickname, 24) || input.adult !== true) throw new InputError('Choose a nickname and confirm you are 18+.');
+      if (typeof input.challengeToken !== 'string' || !input.challengeToken || input.challengeToken.length > 2048 ||
+        !await verifyJoinChallenge(input.challengeToken, new URL(origin!).hostname, challenge.secret, challenge.testing)) {
+        throw new InputError('Complete the verification and try again.');
+      }
+    }
     const token = req.cookies.get(cookie)?.value;
     let id = uuid(token) ? token : null;
     let created = false;
@@ -43,7 +53,7 @@ async function handle(req: NextRequest, write: boolean) {
         [profile] = await query('insert into guest(id,nickname,school,drink,spot) values($1,$2,$3,$4,$5) returning *',
           [id, nickname, clean(input.school, 60), '', '']);
       }
-      if (!profile) return { profile: null };
+      if (!profile) return { profile: null, challenge: { required: challenge.required, siteKey: challenge.siteKey } };
       const action = input.action === 'after-hours' ? 'find' : input.action;
       const showBar = req.nextUrl.searchParams.get('bar') === '1';
       let newBarChat: unknown;
