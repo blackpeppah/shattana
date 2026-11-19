@@ -149,7 +149,7 @@ async function handle(req: NextRequest, write: boolean) {
         await query(`update chat set bar_pending_a=bar_pending_a and a<>$1,
           bar_pending_b=bar_pending_b and b<>$1 where id=$2 and (a=$1 or b=$1)`, [id, input.chatId]);
       }
-      if (['send','shot','leave','block','report'].includes(action)) {
+      if (['send','shot','leave','unmatch','block','report'].includes(action)) {
         if (!uuid(input.chatId)) throw new InputError('Choose a conversation.');
         const [chat] = await query('select * from chat where id=$2 and (a=$1 or b=$1) and not closed', [id, input.chatId]);
         if (!chat) throw new InputError('This chat has ended.');
@@ -170,6 +170,10 @@ async function handle(req: NextRequest, write: boolean) {
         }
         if (action === 'leave') {
           if (chat.matched) throw new InputError('This conversation is already saved in Matches.');
+          await query('update chat set closed=true, ended_at=now() where id=$1', [chat.id]);
+        }
+        if (action === 'unmatch') {
+          if (!chat.matched) throw new InputError('Only saved matches can be removed.');
           await query('update chat set closed=true, ended_at=now() where id=$1', [chat.id]);
         }
         if (action === 'report') {

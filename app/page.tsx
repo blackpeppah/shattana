@@ -39,6 +39,7 @@ export default function Home() {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [report, setReport] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [matchAnnouncement, setMatchAnnouncement] = useState('');
@@ -131,7 +132,7 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => { setBarReport(false); }, [data?.candidate?.id, mode]);
-  useEffect(() => { setReport(false); setDraft(''); }, [chat?.id]);
+  useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); }, [chat?.id]);
   useLayoutEffect(() => { followThread.current = true; }, [chat?.id]);
   useEffect(() => {
     const previous = previousChat.current;
@@ -196,7 +197,11 @@ export default function Home() {
         setMode('quick');
       }
       if (action === 'leave') setNotice('You left the conversation.');
-      if (['find', 'next', 'leave', 'block', 'report'].includes(action)) setChatId('');
+      if (action === 'unmatch') {
+        setView('matches');
+        setNotice('Match removed.');
+      }
+      if (['find', 'next', 'leave', 'unmatch', 'block', 'report'].includes(action)) setChatId('');
       if (action === 'shot' && payload.selected?.matched) setChatId(payload.selected.id);
       return true;
     } catch (failure) {
@@ -333,12 +338,29 @@ export default function Home() {
                 if (!chat.barPending || await act('bar-dismiss')) navigate('matches');
               }}>{chat.matched ? 'Back to Matches' : 'Leave chat'}</button>
               {!chat.matched && <button className="secondary" disabled={busy} onClick={() => void act('next')}>Next chat</button>}
-              <button className="secondary chat-menu" aria-controls="chat-moderation" aria-expanded={report} onClick={() => setReport(!report)}><Flag size={16} /> Chat menu</button>
+              <button className="secondary chat-menu" aria-controls="chat-moderation" aria-expanded={report} onClick={() => {
+                setReport(!report);
+                setConfirmRemove(false);
+              }}><Flag size={16} /> Chat menu</button>
             </div>
-            <div id="chat-moderation" className="report" hidden={!report}><strong>Block or Report</strong><p>Choose a report reason, or block this guest. Both end the conversation.</p><div className="pills">
-              {reasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('report', { reason })}>{reason}</button>)}
-              <button disabled={busy} onClick={() => void act('block')}>Block</button>
-            </div></div>
+            <div id="chat-moderation" className="report" hidden={!report}>
+              {confirmRemove ? <>
+                <strong>Remove this match?</strong>
+                <p>This closes the conversation for both of you and removes it from both Matches lists.</p>
+                <div className="pills">
+                  <button disabled={busy} onClick={() => setConfirmRemove(false)}>Keep match</button>
+                  <button disabled={busy} onClick={() => void act('unmatch')}>Yes, remove match</button>
+                </div>
+              </> : <>
+                <strong>{chat.matched ? 'Manage match' : 'Block or Report'}</strong>
+                <p>Choose a report reason, or block this guest. Both end the conversation.</p>
+                <div className="pills">
+                  {reasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('report', { reason })}>{reason}</button>)}
+                  <button disabled={busy} onClick={() => void act('block')}>Block</button>
+                  {chat.matched && <button disabled={busy} onClick={() => setConfirmRemove(true)}>Remove match</button>}
+                </div>
+              </>}
+            </div>
             {!chat.matched && <div className="shot-control">
               {chat.shot ? <p className="shot-note" role="status">Shot sent · only you can see this</p>
                 : <button className="secondary shot-button" disabled={busy} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
