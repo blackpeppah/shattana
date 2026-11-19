@@ -89,7 +89,8 @@ nav button[aria-current] { border-bottom-color: var(--accent); }
 .count { font-variant-numeric: tabular-nums; }
 .header-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .masthead nav { margin-inline-start: auto; }
-.presence-pill { display: inline-grid; place-items: center; min-width: 33px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--presence); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.presence-pill { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 33px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--presence); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.presence-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .theme-switch { display: grid; place-items: center; min-height: 44px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--accent); }
 .theme-track { position: relative; width: 56px; height: 29px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
 .theme-thumb { position: absolute; inset-block-start: 3px; inset-inline-start: 3px; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: var(--accent); color: var(--on-accent); transition: transform 150ms ease; }
