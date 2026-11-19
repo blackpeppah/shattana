@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent } from 'react';
 import { ArrowRight, Flag, Heart, MessageCircle, Moon, Shuffle, MapPin, ShieldCheck, Sun } from 'lucide-react';
 import { drinks, genders, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
@@ -52,6 +52,7 @@ export default function Home() {
   const composer = useRef<HTMLInputElement>(null);
   const thread = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLDivElement>(null);
+  const pressedControl = useRef<HTMLElement | null>(null);
   const previousChat = useRef<Chat | undefined>(undefined);
   const followThread = useRef(true);
   const revision = useRef(0);
@@ -105,6 +106,20 @@ export default function Home() {
     document.documentElement.dataset.theme = theme;
     setDark(!dark);
     try { localStorage.setItem('shattana.theme', theme); } catch {}
+  }
+
+  function clearTapFeedback() {
+    pressedControl.current?.removeAttribute('data-tap-pressed');
+    pressedControl.current = null;
+  }
+
+  function showTapFeedback(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'mouse' || !(event.target instanceof Element)) return;
+    const control = event.target.closest<HTMLElement>('button:not(:disabled), .faq-row summary');
+    if (!control?.closest('.discover, .masthead')) return;
+    clearTapFeedback();
+    control.setAttribute('data-tap-pressed', '');
+    pressedControl.current = control;
   }
 
   useEffect(() => {
@@ -289,7 +304,8 @@ export default function Home() {
   if (!icebreakers.length) icebreakers.push('one drink or a whole yap session?');
 
   return (
-    <div ref={shell} className={chat ? 'shell chat-shell' : 'shell'}>
+    <div ref={shell} className={chat ? 'shell chat-shell' : 'shell'} onPointerDown={showTapFeedback}
+      onPointerUp={clearTapFeedback} onPointerCancel={clearTapFeedback}>
       <header className="masthead">
         <button className="brand" disabled={endingQuickChat} onClick={() => navigate('home')}>shattana<span>!</span></button>
         {joined && <nav aria-label="Main navigation">
@@ -301,7 +317,7 @@ export default function Home() {
             title="Guests active in the last 90 seconds. Join as a guest to be counted.">{data.activeUsers}</output>}
           <button type="button" className="theme-switch" role="switch" aria-label="Dark mode" aria-checked={dark} onClick={toggleTheme}>
             <span className="theme-track" aria-hidden="true">
-              <span className="theme-thumb">{dark ? <Moon size={13} /> : <Sun size={13} />}</span>
+              <span className="theme-thumb"><Sun size={13} /><Moon size={13} /></span>
             </span>
           </button>
         </div>
@@ -348,7 +364,8 @@ export default function Home() {
             <button className="secondary" aria-pressed={mode === 'bar'} disabled={busy} onClick={() => void chooseMode('bar')}><Heart size={17} /> Across the Bar</button>
           </div>}
 
-          {data?.profile && view === 'home' && !chat && mode === 'bar' && <section className="card discovery-card">
+          {data?.profile && view === 'home' && !chat && <div className="discover-mode" key={mode}>
+          {mode === 'bar' ? <section className="card discovery-card">
             {editingBar || !data.profile.answer
               ? <BarSetup profile={data.profile} busy={busy} save={fields => void act('bar-profile', fields)} />
               : <>
@@ -361,9 +378,7 @@ export default function Home() {
                   {!data.candidate && barCursor && <button className="secondary" disabled={busy} onClick={() => void act('bar-reset')}>Start over</button>}
                 </div>
               </>}
-          </section>}
-
-          {joined && view === 'home' && !chat && mode === 'quick' && (waiting
+          </section> : waiting
             ? <section className="card waiting"><div className="tile-icon"><Shuffle size={23} /></div><h2 role="status">Finding someone…</h2><p>Keep this tab open. We’ll open the chat when someone joins.</p><button className="secondary" onClick={() => void act('cancel')} disabled={busy}>Cancel search</button></section>
             : <section className="card discovery-card">
               <div className="card-head"><h2>Quick Chat</h2><p>Get paired at random. Choose an icebreaker or jump right in.</p></div>
@@ -376,7 +391,8 @@ export default function Home() {
               <fieldset><legend>What’s your round? <span>Optional</span></legend><div className="pills">{drinks.map(option => <button type="button" key={option} aria-pressed={drink === option} onClick={() => setDrink(drink === option ? '' : option)}>{option}</button>)}</div></fieldset>
               <fieldset><legend>Where’s your spot? <span>Optional</span></legend><div className="pills spot-options">{spots.map(option => <button type="button" key={option} aria-pressed={spot === option} onClick={() => setSpot(spot === option ? '' : option)}>{option}</button>)}</div></fieldset>
               <button className="primary" disabled={busy} onClick={() => void act('find', { drink, spot, quickGender })}>{busy ? 'Starting…' : 'Start Quick Chat'} <ArrowRight size={19} /></button>
-            </section>)}
+            </section>}
+          </div>}
 
           {joined && view === 'home' && !chat && <section className="after-hours">
             <div><h3>After Hours</h3><p>{meetup?.tonight ? 'Tonight’s meetup started at 9 PM.' : meetup ? `Next meetup Friday, ${meetup.date} at 9 PM.` : 'Fridays at 9 PM.'} Bacolod time. Everyone joins the Quick Chat pool.</p></div>

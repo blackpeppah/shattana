@@ -1,4 +1,4 @@
-import { Clock, Heart, Minus, Plus, Shuffle } from 'lucide-react';
+import { ChevronDown, Clock, Heart, Shuffle } from 'lucide-react';
 
 const modes = [
   ['Quick Chat', 'Get paired at random for a one-on-one text chat. Same round or same spot? That’s your opener.', Shuffle],
@@ -28,10 +28,8 @@ export function DiscoverGuide() {
       <h2 id="discover-faq">FAQ</h2>
       <div className="faq-rows">
         {questions.map(([question, answer]) => <details key={question} className="faq-row">
-          <summary>{question}<span className="faq-toggle" aria-hidden="true">
-            <Plus size={17} /><Minus size={17} />
-          </span></summary>
-          <p>{answer}</p>
+          <summary>{question}<ChevronDown className="faq-toggle" size={17} aria-hidden="true" /></summary>
+          <div className="faq-answer"><p>{answer}</p></div>
         </details>)}
       </div>
     </section>
