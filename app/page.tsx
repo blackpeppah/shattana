@@ -251,7 +251,12 @@ export default function Home() {
   }
 
   const mySpot = data?.profile?.spot;
-  const opener = mySpot && mySpot === chat?.spot ? `${mySpot} man gali. Sin-o mauna mag-hi?` : 'Hi lang anay. Sin-o mauna?';
+  const myRound = data?.profile?.drink;
+  const icebreakers = [
+    myRound && myRound === chat?.drink ? `${myRound} kag chika? g?` : '',
+    mySpot && mySpot === chat?.spot ? `chika sa ${mySpot}? g?` : '',
+  ].filter(Boolean);
+  if (!icebreakers.length) icebreakers.push('one drink or a whole yap session?');
 
   return (
     <div ref={shell} className={chat ? 'shell chat-shell' : 'shell'}>
@@ -399,11 +404,11 @@ export default function Home() {
               followThread.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
             }}>
               {!data?.messages?.length && !chat.matched && <div className="first-message">
-                <p>{opener}</p>
+                <div className="icebreaker-lines">{icebreakers.map(line => <p key={line}>{line}</p>)}</div>
                 <button type="button" className="secondary" onClick={() => {
-                  if (!draft) setDraft('Hi lang anay 👀');
+                  if (!draft) setDraft('g!');
                   composer.current?.focus();
-                }}>Hi lang anay 👀</button>
+                }}>g!</button>
               </div>}
               {data?.messages?.map(message => <p className={message.mine ? 'bubble mine' : 'bubble'} key={message.id}>{message.body}</p>)}
               {matchAnnouncement === chat.id && <p className="match-announcement">Ti, pareho kamo gali.</p>}

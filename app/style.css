@@ -276,6 +276,7 @@ legend { margin-bottom: 8px; padding: 0; }
 }
 .thread > * { flex: none; }
 .first-message { display: grid; justify-items: center; gap: 8px; padding: 8px 0 2px; text-align: center; }
+.icebreaker-lines { display: grid; gap: 3px; }
 .first-message p { margin: 0; font-size: 15px; }
 .first-message button { color: var(--accent); }
 .thread .bubble {
