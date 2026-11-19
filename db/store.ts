@@ -16,18 +16,24 @@ export async function transact<T>(write: boolean, work: (query: Query) => Promis
     })();
     return (await runtime.shattanaLocal).transaction(tx => work(async (sql, args) => (await tx.query(sql, args)).rows as never));
   }
-  runtime.shattanaPool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+  runtime.shattanaPool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000 });
   const client = await runtime.shattanaPool.connect();
+  let discard = false;
   try {
-    await client.query('begin');
+    await client.query(write ? 'begin' : 'begin isolation level repeatable read read only');
+    await client.query("set local statement_timeout = '5s'");
     if (write) await client.query('select pg_advisory_xact_lock(714928315)');
     const result = await work(async (sql, args) => (await client.query(sql, args)).rows as never);
     await client.query('commit');
     return result;
   } catch (error) {
-    await client.query('rollback');
+    try {
+      await client.query('rollback');
+    } catch {
+      discard = true;
+    }
     throw error;
   } finally {
-    client.release();
+    client.release(discard);
   }
 }

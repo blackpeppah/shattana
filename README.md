@@ -25,6 +25,8 @@ Local mode uses an embedded PostgreSQL database in `.shattana-db/`. The guest co
 3. Deploy and use the assigned `.vercel.app` address. The availability of `shattana.vercel.app` depends on Vercel.
 4. Repeat the two-browser test against that deployment.
 
+For an existing deployment, rerun the schema before deploying updates. It adds the message timestamp used to cap bursts at eight messages per guest per chat in ten seconds. Existing messages stay readable.
+
 The application uses one same-origin API route. Review reports through the Supabase SQL Editor during a small pilot:
 
 ```sql
@@ -34,5 +36,7 @@ order by r.created_at desc;
 ```
 
 Reporting also blocks the guest and closes the conversation. Assign someone to handle reports before opening the pilot publicly. The guest cookie is the account identifier, so a fresh browser or cleared cookie can create a new identity. A public rollout needs stronger protections against repeat abuse.
+
+Quick Chat pairs guests at random. Across the Bar uses a separate nickname card with a favorite hangout and prompt answer. Age, gender, and preferences are used privately to check compatibility both ways. A Say Hi is private until it’s mutual, then the chat appears in Matches. After Hours starts Fridays at 9 PM in Bacolod and uses the same Quick Chat queue.
 
 The current build uses plain CSS and text only. It needs no SMS, email, video provider, paid API, or custom domain.
