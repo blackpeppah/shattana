@@ -8,6 +8,7 @@ import { afterHours } from './after-hours';
 import { JoinChallenge } from './join-challenge';
 
 const openChatKey = 'shattana.open-chat';
+const nextChatNotice = 'Chat ended. Looking for someone new…';
 type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; gender: string; matched: boolean; shot: boolean; barPending: boolean };
 type State = {
   profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; quickGender: string; waiting: boolean }) | null;
@@ -109,8 +110,10 @@ export default function Home() {
         if (!live || version !== revision.current) return;
         setData(payload);
         if (!data) setError('');
-        if (view === 'home' && data?.active && !payload.active && !payload.selected) {
-          setNotice('That conversation ended. Start a new one whenever you’re ready.');
+        const previousQuickChat = data?.active?.id;
+        if (view === 'home' && previousQuickChat && payload.active?.id !== previousQuickChat &&
+          !payload.matches?.some(match => match.id === previousQuickChat)) {
+          setNotice('Chat ended. Start a new Quick Chat whenever you’re ready.');
         }
         if (payload.profile && !hydrated.current) {
           hydrated.current = true;
@@ -147,6 +150,11 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => { setBarReport(false); }, [data?.candidate?.id, mode]);
+  useEffect(() => {
+    if (!chat || notice !== nextChatNotice) return;
+    const timer = window.setTimeout(() => setNotice(''), 5000);
+    return () => window.clearTimeout(timer);
+  }, [chat?.id, notice]);
   useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); }, [chat?.id]);
   useLayoutEffect(() => { followThread.current = true; }, [chat?.id]);
   useEffect(() => {
@@ -212,6 +220,7 @@ export default function Home() {
         setMode('quick');
       }
       if (action === 'leave') setNotice('You left the conversation.');
+      if (action === 'next') setNotice(nextChatNotice);
       if (action === 'unmatch') {
         setView('matches');
         setNotice('Match removed.');
@@ -290,7 +299,9 @@ export default function Home() {
 
         <div className="panel">
           {error && <p className="error" role="alert">{error}</p>}
-          {notice && !chat && <p className="notice" role="status">{notice}</p>}
+          {notice && (!chat || notice === nextChatNotice) && <p className="notice" role="status">
+            {chat ? 'Chat ended. You’re connected with someone new.' : notice}
+          </p>}
           {!data && !error && <p role="status" className="card muted">Loading Shattana…</p>}
 
           {data && !joined && <form className="card entry" onSubmit={async event => {
