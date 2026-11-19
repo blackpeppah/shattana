@@ -273,8 +273,8 @@ export default function Home() {
       <main className={view === 'home' && !chat ? 'discover' : 'workspace'}>
         {view === 'home' && !chat && <section className="hero">
           <div className="locale"><MapPin size={15} /> Bacolod City</div>
-          <h1>Hi lang anay.<br /><em>Basi ikaw na.</em></h1>
-          <p>May nakita ka sa pihak nga table? <strong>Shot mo na.</strong></p>
+          <h1>down for a drink? <em>g!</em></h1>
+          <p>yap and i’m giving u shots</p>
           <div className="hero-preview" aria-hidden="true">
             <span className="preview-bubble">Hi! Ari ka man sa BCD? <span>✦</span></span>
             <span className="preview-bubble preview-reply">Oo! Diin ta? <span>♡</span></span>
