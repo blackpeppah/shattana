@@ -48,16 +48,20 @@ async function handle(req: NextRequest, write: boolean) {
       const showBar = req.nextUrl.searchParams.get('bar') === '1';
       let newBarChat: unknown;
       if (write) {
+        await query(`update guest set queued_at=null where id=$1 and seen_at <= now()-interval '35 seconds'`, [id]);
+        await query(`update chat set closed=true, ended_at=expiry.at
+          from (select c.id, least(a.seen_at,b.seen_at)+interval '90 seconds' as at from chat c
+            join guest a on a.id=c.a join guest b on b.id=c.b
+            where (c.a=$1 or c.b=$1) and not c.matched and not c.closed) expiry
+          where chat.id=expiry.id and expiry.at <= now()`, [id]);
         await query("update guest set seen_at=now() where id=$1", [id]);
-        await query(`update chat set closed=true where (a=$1 or b=$1) and not matched and not closed
-          and exists (select 1 from guest where id in (chat.a,chat.b) and seen_at < now()-interval '90 seconds')`, [id]);
       }
-      const [search] = action === 'heartbeat' ? await query("select id from guest where id=$1 and queued_at>now()-interval '35 seconds'", [id]) : [];
+      const [search] = action === 'heartbeat' ? await query('select id from guest where id=$1 and queued_at is not null', [id]) : [];
       if (action === 'find' || action === 'next' || search) {
         if (action === 'next') {
           if (!uuid(input.chatId)) throw new InputError('Choose a conversation.');
-          const [closed] = await query(`update chat set closed=true where id=$2
-            and (a=$1 or b=$1) and not matched and not closed returning id`, [id, input.chatId]);
+          const [closed] = await query(`update chat set closed=true, ended_at=case when closed then ended_at else now() end
+            where id=$2 and (a=$1 or b=$1) and not matched returning id`, [id, input.chatId]);
           if (!closed) throw new InputError('This Quick Chat has ended.');
         } else if (action === 'find') {
           await query('update guest set drink=$2,spot=$3 where id=$1',
@@ -65,16 +69,26 @@ async function handle(req: NextRequest, write: boolean) {
         }
         const [active] = await query('select id from chat where (a=$1 or b=$1) and not matched and not closed', [id]);
         if (!active) {
-          const [peer] = await query(`select g.id from guest g where g.id<>$1
-            and g.queued_at > now()-interval '35 seconds'
+          // An exponential draw gives each candidate odds proportional to their wait weight.
+          const [peer] = await query(`select g.id from guest g
+            cross join lateral (
+              select count(*) as encounters, bool_or(matched) as matched,
+                max(coalesce(ended_at,created_at)) as last_chat
+              from chat where least(a,b)=least($1,g.id) and greatest(a,b)=greatest($1,g.id)
+            ) history
+            where g.id<>$1 and g.queued_at is not null and g.seen_at > now()-interval '35 seconds'
             and not exists (select 1 from block where (actor=$1 and target=g.id) or (actor=g.id and target=$1))
-            and not exists (select 1 from chat where ((a=$1 and b=g.id) or (b=$1 and a=g.id)) and (matched or created_at > now()-interval '2 minutes'))
-            order by queued_at limit 1`, [id]);
+            and not exists (select 1 from report where (actor=$1 and target=g.id) or (actor=g.id and target=$1))
+            and not exists (select 1 from chat where (a=g.id or b=g.id) and not matched and not closed)
+            and (history.encounters=0 or (not history.matched and history.last_chat <= now()-interval '10 minutes'))
+            order by (history.encounters<>0),
+              -ln(1-random()) / (1+greatest(0,extract(epoch from now()-g.queued_at))/30)
+            limit 1`, [id]);
           if (peer) {
             await query('insert into chat(id,a,b) values($1,$2,$3)', [randomUUID(), id, peer.id]);
             await query('update guest set queued_at=null where id in ($1,$2)', [id, peer.id]);
           } else {
-            await query('update guest set queued_at=now() where id=$1', [id]);
+            await query('update guest set queued_at=coalesce(queued_at,now()) where id=$1', [id]);
           }
         }
       }
@@ -118,7 +132,7 @@ async function handle(req: NextRequest, write: boolean) {
             await query('insert into report(actor,target,reason) values($1,$2,$3) on conflict do nothing', [id, target, input.reason]);
           }
           await query('insert into block(actor,target) values($1,$2) on conflict do nothing', [id, target]);
-          await query('update chat set closed=true where (a=$1 and b=$2) or (a=$2 and b=$1)', [id, target]);
+          await query('update chat set closed=true, ended_at=now() where not closed and ((a=$1 and b=$2) or (a=$2 and b=$1))', [id, target]);
         }
       }
       if (action === 'bar-dismiss' && uuid(input.chatId)) {
@@ -146,7 +160,7 @@ async function handle(req: NextRequest, write: boolean) {
         }
         if (action === 'leave') {
           if (chat.matched) throw new InputError('This conversation is already saved in Matches.');
-          await query('update chat set closed=true where id=$1', [chat.id]);
+          await query('update chat set closed=true, ended_at=now() where id=$1', [chat.id]);
         }
         if (action === 'report') {
           if (!reasons.includes(input.reason)) throw new InputError('Choose a report reason.');
@@ -155,14 +169,14 @@ async function handle(req: NextRequest, write: boolean) {
         }
         if (action === 'block' || action === 'report') {
           await query('insert into block(actor,target) values($1,$2) on conflict do nothing', [id, peer]);
-          await query('update chat set closed=true where (a=$1 and b=$2) or (b=$1 and a=$2)', [id, peer]);
+          await query('update chat set closed=true, ended_at=now() where not closed and ((a=$1 and b=$2) or (b=$1 and a=$2))', [id, peer]);
         }
       }
 
       const [current] = await query(`select nickname, school, drink, spot,
         bar_age as age, bar_gender as gender, bar_interest as interest, bar_min_age as "minAge",
         bar_max_age as "maxAge", bar_spot as favorite, bar_answer as answer,
-        coalesce(queued_at>now()-interval '35 seconds',false) as waiting from guest where id=$1`, [id]);
+        (queued_at is not null and seen_at>now()-interval '35 seconds') as waiting from guest where id=$1`, [id]);
       const after = action === 'bar-next' ? input.target : req.nextUrl.searchParams.get('after');
       const [candidate] = showBar && current.answer ? await query(`select g.id, g.nickname,
         g.bar_spot as favorite, g.bar_answer as answer ${barEligibility}

@@ -29,6 +29,8 @@ create index if not exists chat_a on chat(a);
 create index if not exists chat_b on chat(b);
 alter table chat add column if not exists bar_pending_a boolean not null default false;
 alter table chat add column if not exists bar_pending_b boolean not null default false;
+alter table chat add column if not exists ended_at timestamptz;
+create index if not exists chat_pair_history on chat (least(a,b), greatest(a,b));
 create unique index if not exists chat_matched_pair on chat (least(a,b), greatest(a,b)) where matched;
 create table if not exists bar_hi (
   sender uuid references guest,

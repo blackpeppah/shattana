@@ -25,7 +25,7 @@ Local mode uses an embedded PostgreSQL database in `.shattana-db/`. The guest co
 3. Deploy and use the assigned `.vercel.app` address. The availability of `shattana.vercel.app` depends on Vercel.
 4. Repeat the two-browser test against that deployment.
 
-For an existing deployment, rerun the schema before deploying updates. It adds the message timestamp used to cap bursts at eight messages per guest per chat in ten seconds. Existing messages stay readable.
+For an existing deployment, rerun the schema before deploying updates. It adds timestamps for the chat cooldown and the limit of eight messages per guest per chat in ten seconds. Existing messages stay readable. For older chats with no recorded end time, the cooldown uses the creation time.
 
 The application uses one same-origin API route. Review reports through the Supabase SQL Editor during a small pilot:
 
