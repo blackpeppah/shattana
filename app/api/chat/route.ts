@@ -163,6 +163,11 @@ async function handle(req: NextRequest, write: boolean) {
         await query(`update chat set bar_pending_a=bar_pending_a and a<>$1,
           bar_pending_b=bar_pending_b and b<>$1 where id=$2 and (a=$1 or b=$1)`, [id, input.chatId]);
       }
+      if (action === 'typing' && uuid(input.chatId)) {
+        await query(`update chat set a_typing_at=case when a=$1 then now() else a_typing_at end,
+          b_typing_at=case when b=$1 then now() else b_typing_at end
+          where id=$2 and (a=$1 or b=$1) and not closed`, [id, input.chatId]);
+      }
       if (['send','shot','leave','unmatch','block','report'].includes(action)) {
         if (!uuid(input.chatId)) throw new InputError('Choose a conversation.');
         const [chat] = await query('select * from chat where id=$2 and (a=$1 or b=$1) and not closed', [id, input.chatId]);
@@ -177,6 +182,8 @@ async function handle(req: NextRequest, write: boolean) {
           if (Number(rate.total) >= 1000) throw new InputError('This chat has reached its message limit.');
           if (Number(rate.recent) >= 8) throw new MessageRateError('Give it a few seconds before sending another message.');
           await query('insert into message(chat_id,sender,body) values($1,$2,$3)', [chat.id, id, body]);
+          await query(`update chat set a_typing_at=case when a=$1 then null else a_typing_at end,
+            b_typing_at=case when b=$1 then null else b_typing_at end where id=$2`, [id, chat.id]);
         }
         if (action === 'shot') {
           await query(`update chat set a_shot=a_shot or a=$1,b_shot=b_shot or b=$1,
@@ -212,6 +219,7 @@ async function handle(req: NextRequest, write: boolean) {
         and not exists (select 1 from bar_hi where sender=me.id and recipient=g.id)
         order by (g.id>$2::uuid) desc nulls last, g.id limit 1`, [id, uuid(after) ? after : null]) : [];
       const chats = await query(`select c.id,c.matched,g.nickname,g.school,g.spot,g.drink,
+        coalesce((case when c.a=$1 then c.b_typing_at else c.a_typing_at end) > now()-interval '4 seconds',false) as "peerTyping",
         case when c.a=$1 then c.b_gender else c.a_gender end as gender,
         case when c.a=$1 then c.a_shot else c.b_shot end as shot,
         case when c.a=$1 then c.bar_pending_a else c.bar_pending_b end as "barPending"

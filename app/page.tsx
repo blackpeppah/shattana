@@ -8,7 +8,7 @@ import { afterHours } from './after-hours';
 import { JoinChallenge } from './join-challenge';
 
 const openChatKey = 'shattana.open-chat';
-type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; gender: string; matched: boolean; shot: boolean; barPending: boolean };
+type Chat = { id: string; nickname: string; school: string; drink: string; spot: string; gender: string; matched: boolean; shot: boolean; barPending: boolean; peerTyping: boolean };
 type State = {
   profile: (BarProfile & { nickname: string; school: string; drink: string; spot: string; quickGender: string; waiting: boolean }) | null;
   challenge?: { required: boolean; siteKey?: string };
@@ -57,6 +57,7 @@ export default function Home() {
   const requestInProgress = useRef(false);
   const endingChat = useRef(false);
   const lastHeartbeat = useRef(0);
+  const typingActivity = useRef<{ chatId: string; at: number } | null>(null);
   const hydrated = useRef(false);
   const chat = chatId ? (data?.selected?.id === chatId ? data.selected : undefined)
     : view === 'home' ? (data?.selected?.barPending ? data.selected : data?.active) : undefined;
@@ -118,8 +119,12 @@ export default function Home() {
       inFlight = true;
       const version = revision.current;
       try {
-        const heartbeat = joined && Date.now() - lastHeartbeat.current > (waiting || data?.active ? 12000 : 35000);
-        const payload = await request(heartbeat ? 'heartbeat' : undefined, {}, chatId || data?.active?.id);
+        const now = Date.now();
+        const selected = chatId || data?.selected?.id;
+        const activity = typingActivity.current;
+        const typing = !endingChat.current && activity !== null && activity.chatId === selected && now - activity.at < 2400;
+        const heartbeat = joined && now - lastHeartbeat.current > (waiting || data?.active ? 12000 : 35000);
+        const payload = await request(heartbeat ? 'heartbeat' : typing ? 'typing' : undefined, {}, selected);
         if (heartbeat) lastHeartbeat.current = Date.now();
         if (!live || version !== revision.current) return;
         const previousQuickChat = data?.active?.id;
@@ -169,7 +174,7 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => { setBarReport(false); }, [data?.candidate?.id, mode]);
-  useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); }, [chat?.id]);
+  useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); typingActivity.current = null; }, [chat?.id]);
   useLayoutEffect(() => { followThread.current = true; }, [chat?.id]);
   useEffect(() => {
     const previous = previousChat.current;
@@ -184,7 +189,7 @@ export default function Home() {
 
   useLayoutEffect(() => {
     if (thread.current && (followThread.current || endingQuickChat)) thread.current.scrollTop = thread.current.scrollHeight;
-  }, [lastMessage, chat?.id, matchAnnouncement, endingQuickChat]);
+  }, [lastMessage, chat?.id, chat?.peerTyping, matchAnnouncement, endingQuickChat]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -270,6 +275,7 @@ export default function Home() {
   async function send(event: FormEvent) {
     event.preventDefault();
     if (!draft.trim()) return;
+    typingActivity.current = null;
     if (await act('send', { body: draft })) setDraft('');
   }
 
@@ -434,11 +440,18 @@ export default function Home() {
                 }}>g!</button>
               </div>}
               {data?.messages?.map(message => <p className={message.mine ? 'bubble mine' : 'bubble'} key={message.id}>{message.body}</p>)}
+              {chat.peerTyping && !endingQuickChat && <div className="typing-bubble" role="status" aria-label={`${chat.nickname} is typing`}>
+                <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+              </div>}
               {matchAnnouncement === chat.id && <p className="match-announcement">Ti, pareho kamo gali.</p>}
               {endingQuickChat && <p className="match-announcement" role="status">Chat ended. Looking for someone new…</p>}
             </div>
             <form className="composer" onSubmit={send}>
-              <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy || endingQuickChat} value={draft} onChange={event => setDraft(event.target.value)} />
+              <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy || endingQuickChat} value={draft} onChange={event => {
+                const value = event.target.value;
+                setDraft(value);
+                typingActivity.current = value.trim() ? { chatId: chat.id, at: Date.now() } : null;
+              }} />
               <button className="primary send" disabled={busy || endingQuickChat || !draft.trim()}>Send</button>
             </form>
           </section>}
