@@ -18,6 +18,8 @@ const expiredPhoto = { owner: randomUUID(), viewer: randomUUID(), id: randomUUID
 const expiry = { owner: randomUUID(), timedPeer: randomUUID(), pastPeer: randomUUID(), todayPeer: randomUUID(),
   timed: randomUUID(), past: randomUUID(), today: randomUUID() };
 const disconnected = { a: randomUUID(), b: randomUUID(), chat: randomUUID() };
+const leavingQuickChat = { a: randomUUID(), b: randomUUID(), chat: randomUUID() };
+const simultaneousNext = { a: randomUUID(), b: randomUUID(), chat: randomUUID() };
 const moderatorUsername = 'test-admin';
 const moderatorPassword = randomUUID();
 const moderatorSecret = randomUUID();
@@ -76,6 +78,11 @@ before(async () => {
     await db.query("insert into guest(id,nickname,school,drink,spot) select id,'Expiry test','','','' from unnest($1::uuid[]) id",
       [[expiry.owner, expiry.timedPeer, expiry.pastPeer, expiry.todayPeer, disconnected.a, disconnected.b]]);
     await db.query('update guest set seen_at=now()-interval \'91 seconds\' where id=$1', [disconnected.a]);
+    for (const quick of [leavingQuickChat, simultaneousNext]) {
+      await db.query("insert into guest(id,nickname,school,drink,spot) values($1,'Quick A','','CLVB','Petals'),($2,'Quick B','','Beer','Lunar')",
+        [quick.a, quick.b]);
+      await db.query('insert into chat(id,a,b) values($1,$2,$3)', [quick.chat, quick.a, quick.b]);
+    }
     await db.query('insert into chat(id,a,b,matched) values($1,$2,$3,true),($4,$2,$5,true),($6,$2,$7,true),($8,$9,$10,false)',
       [expiry.timed, expiry.owner, expiry.timedPeer, expiry.past, expiry.pastPeer, expiry.today, expiry.todayPeer,
         disconnected.chat, disconnected.a, disconnected.b]);
@@ -273,14 +280,57 @@ test('two guests match, retry safely, and keep newer messages unread', async () 
   assert.equal((await chat(b, 'meetup-propose', { chatId: id, version: paused.invite.version, venue: 'Petals', date })).invite.status, 'pending');
 });
 
-test('a guest can report the closed chat after Next', async () => {
+test('only the guest who taps Next searches again, and the other guest can still report', async () => {
   const { a, b, id } = await pair('Luz', 'Ira');
-  await chat(a, 'next', { chatId: id });
+  assert.equal((await chat(a, 'next', { chatId: id })).profile.waiting, true);
+  assert.equal((await chat({ cookie: a.cookie })).profile.waiting, true);
+  const refreshed = await chat({ cookie: b.cookie }, undefined, { chatId: id });
+  assert.equal(refreshed.profile.waiting, false);
+  assert.equal(refreshed.endedQuickChat, id);
+  assert.equal((await chat(b, 'heartbeat', { chatId: id })).profile.waiting, false);
   assert.equal((await chat(b)).lastReportableChat, id);
   await chat(b, 'report-last', { chatId: id, reason: 'Harassment' });
   await chat(a, 'cancel');
-  await chat(b, 'cancel');
+  assert.equal((await chat(a, 'next', { chatId: id })).profile.waiting, false);
   assert.equal((await chat(b)).lastReportableChat, undefined);
+});
+
+test('Leave chat keeps both guests idle until the other guest searches with their saved picks', async () => {
+  const a = { cookie: 'shattana_guest=' + leavingQuickChat.a };
+  const b = { cookie: 'shattana_guest=' + leavingQuickChat.b };
+  const { chat: id } = leavingQuickChat;
+  assert.equal((await chat(a, 'leave', { chatId: id })).profile.waiting, false);
+  const refreshed = await chat(b, undefined, { chatId: id });
+  assert.equal(refreshed.endedQuickChat, id);
+  assert.equal(refreshed.profile.waiting, false);
+  assert.equal((await chat(b, 'heartbeat', { chatId: id })).profile.waiting, false);
+  assert.equal((await chat(b, 'next', { chatId: id })).profile.waiting, false);
+  const { drink, spot, quickGender } = refreshed.profile;
+  const searched = await chat(b, 'find', { drink, spot, quickGender });
+  assert.equal(searched.profile.waiting, true);
+  assert.equal(searched.profile.drink, 'Beer');
+  assert.equal(searched.profile.spot, 'Lunar');
+  assert.equal((await chat({ cookie: a.cookie })).profile.waiting, false);
+  await chat(b, 'cancel');
+});
+
+test('simultaneous Next taps record each guest’s own search and retries stay canceled', async () => {
+  const a = { cookie: 'shattana_guest=' + simultaneousNext.a };
+  const b = { cookie: 'shattana_guest=' + simultaneousNext.b };
+  const { chat: id } = simultaneousNext;
+  await Promise.all([chat(a), chat(b)]);
+  const results = await Promise.all([chat(a, 'next', { chatId: id }), chat(b, 'next', { chatId: id })]);
+  for (const result of results) {
+    assert.equal(result.profile.waiting, true);
+    assert.equal(result.active, undefined);
+    assert.equal(result.endedQuickChat, id);
+  }
+  await chat(a, 'cancel');
+  const repeated = await chat(a, 'next', { chatId: id });
+  assert.equal(repeated.profile.waiting, false);
+  assert.equal((await chat(b, 'heartbeat')).profile.waiting, true);
+  assert.equal((await chat(a)).profile.waiting, false);
+  await chat(b, 'cancel');
 });
 
 test('saved history paginates without overlap', async () => {
@@ -319,11 +369,18 @@ test('Quick Chat cannot resume after the returning guest is past the reconnect w
   const expired = await chat(returning, undefined, { chatId: disconnected.chat });
   assert.equal(expired.active, undefined);
   assert.equal(expired.endedQuickChat, disconnected.chat);
-  assert.equal((await chat(returning, 'heartbeat', { chatId: disconnected.chat })).active, undefined);
+  assert.equal(expired.profile.waiting, false);
+  const heartbeat = await chat(returning, 'heartbeat', { chatId: disconnected.chat });
+  assert.equal(heartbeat.active, undefined);
+  assert.equal(heartbeat.profile.waiting, false);
   const peer = await chat(waiting, undefined, { chatId: disconnected.chat });
   assert.equal(peer.endedQuickChat, disconnected.chat);
   assert.equal(peer.profile.waiting, false);
   await chat(waiting, 'send', { chatId: disconnected.chat, body: 'Cannot reopen' }, 400);
+  assert.equal((await chat(returning, 'next', { chatId: disconnected.chat })).profile.waiting, false);
+  assert.equal((await chat(returning, 'find')).profile.waiting, true);
+  assert.equal((await chat(waiting, 'heartbeat', { chatId: disconnected.chat })).profile.waiting, false);
+  await chat(returning, 'cancel');
 });
 
 test('Discover alerts skip the initial unread baseline and deduplicate incoming messages', async () => {

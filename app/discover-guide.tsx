@@ -1,16 +1,20 @@
-import { ChevronDown, Clock, Heart, Shuffle } from 'lucide-react';
+import { ChevronDown, Heart, MapPin, ShieldCheck, Shuffle } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 const modes = [
-  ['Quick Chat', 'Get paired at random for a one-on-one text chat. Same round or same spot? That’s your opener.', Shuffle],
-  ['Across the Bar', 'See who fits what you’re both looking for. Tap Say Hi if you’re interested. If they say hi back, a private chat opens.', Heart],
-  ['After Hours', 'Fridays at 9 PM, Bacolod time. Drop into the same Quick Chat queue.', Clock],
+  ['Quick Chat', 'Get paired at random for a private text chat.', Shuffle],
+  ['Across the Bar', 'Browse profiles and open a private text chat when both people tap Say Hi.', Heart],
+] as const;
+
+const notes = [
+  ['Bacolod after dark', 'Petals, Lunar, or wherever you end up. Pick your go-to spot and use it to break the ice.', MapPin],
+  ['Active moderation', 'Real people review reports and can suspend guests who break the rules. If a chat feels off, open Chat menu to block or report.', ShieldCheck],
 ] as const;
 
 const questions = [
   ['Do I need an account?', 'Join as a guest with a nickname and confirm you’re 18 or older.'],
   ['Can people see where I am?', 'Shattana doesn’t share your live location. Your favorite hangout can show on your Across the Bar card or come up as a Quick Chat icebreaker.'],
-  ['Will my matches disappear if I refresh?', 'Your matches stay available in the same browser as long as your guest session cookie is still there.'],
+  ['Will my matches disappear if I refresh?', 'Open Matches to reopen saved conversations in the same browser while your guest session cookie is still there.'],
   ['How do I block or report someone?', 'In a conversation, open Chat menu. You can block the guest or choose a report reason. Either action ends the chat.'],
 ];
 
@@ -24,6 +28,12 @@ export function DiscoverGuide({ afterFaq }: { afterFaq?: ReactNode }) {
           <dd>{description}</dd>
         </div>)}
       </dl>
+      <ul className="guide-notes">
+        {notes.map(([title, description, Icon]) => <li key={title} className="guide-note">
+          <span className="guide-note-icon" aria-hidden="true"><Icon size={19} /></span>
+          <div><h3>{title}</h3><p>{description}</p></div>
+        </li>)}
+      </ul>
     </section>
     <div className="guide-faq">
       <section aria-labelledby="discover-faq">

@@ -16,9 +16,11 @@ npm run dev
 
 Run `npm test` to build and exercise two guest sessions against a temporary local database. The suite covers pairing, saved matches, safe sends, unread positions, meetup responses, reporting after Next, and earlier message pages.
 
-Open http://localhost:3000 in two separate browser profiles, or in a regular window and an incognito window. Join with different nicknames, tap **Find a Chat** in both, and send a message. Tap **Shoot Your Shot** in both windows and refresh. **Matches** should still contain the conversation.
+Open http://localhost:3000 in two separate browser profiles, or in a regular window and an incognito window. Join with different nicknames, choose **Quick Chat → Start Quick Chat** in both, and send a message. Tap **Shoot Your Shot** in both windows and refresh. **Matches** should still contain the conversation.
 
 Local mode uses an embedded PostgreSQL database in `.shattana-db/`. The guest cookie restores access in the same browser. Clearing the cookie loses access to that guest account. Unmatched chats expire after approximately 90 seconds of inactivity from either guest. Chat updates use short polling while a conversation or queue is active.
+
+For phone testing on the same network, set `SHATTANA_DEV_HOST` in `.env.development.local` to your PC's LAN IP address (without `http://` or a port). Run `npm run dev -- --hostname 0.0.0.0 --port 3000` and open `http://<LAN-IP>:3000` on the phone. If your Supabase connection is unavailable, set `DATABASE_URL=` in the same file and restart the dev server to use the embedded database. Local guests and matches are stored separately from Supabase.
 
 ## Deploy a free-tier prototype
 
@@ -72,6 +74,6 @@ $job$);
 
 Replace the old scheduled SQL cleanup job if you installed it earlier. Check the app response in `net._http_response` using the request ID. A `200` confirms completion. A Storage error leaves files queued for retry during the next run or eligible photo operation. Use the private bucket credentials for Storage cleanup and keep Vault secrets server-side. [Supabase pg_net](https://supabase.com/docs/guides/database/extensions/pg_net)
 
-Quick Chat pairs guests at random. Guests who chatted without matching can meet again two minutes after their chat ends. Across the Bar uses a separate nickname card with a favorite hangout and prompt answer. Age, gender, and preferences are used privately to check compatibility both ways. A Say Hi is private until it’s mutual, then the chat appears in Matches. After Hours starts Fridays at 9 PM in Bacolod and uses the same Quick Chat queue.
+Quick Chat pairs guests at random for a private one-on-one text chat. Guests who chatted without matching can meet again two minutes after their chat ends. Across the Bar uses a separate nickname card with a favorite hangout and prompt answer. Age, gender, and preferences are used privately to check compatibility both ways. When both guests tap Say Hi, a private one-on-one text chat opens. Reopen saved chats from **Matches**.
 
 The current build uses plain CSS and text only. It needs no SMS, email, video provider, paid API, or custom domain.

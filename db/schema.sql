@@ -176,3 +176,7 @@ revoke execute on function public.shattana_pending_chat_evidence(uuid,timestampt
 -- Keep reply IDs after the original body is deleted by guest deletion or retention.
 alter table message add column if not exists reply_to bigint;
 alter table meetup_invite add column if not exists canceled_at timestamptz;
+
+-- Record each participant's own Next tap so a retry can't restart a canceled search.
+alter table chat add column if not exists a_pressed_next boolean not null default false;
+alter table chat add column if not exists b_pressed_next boolean not null default false;

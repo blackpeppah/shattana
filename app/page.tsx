@@ -5,7 +5,6 @@ import Image from 'next/image';
 import { ArrowRight, Flag, Heart, MessageCircle, Moon, Shuffle, MapPin, ShieldCheck, Sun } from 'lucide-react';
 import { drinks, genders, pausedChatMessage, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
-import { afterHours } from './after-hours';
 import { DiscoverGuide } from './discover-guide';
 import { GuestPrivacy } from './guest-privacy';
 import { JoinChallenge } from './join-challenge';
@@ -16,6 +15,7 @@ import { PhotoAvatar, type PhotoSettings } from './profile-photo';
 import shattanaLogo from '../shattana-logo.png';
 
 const openChatKey = 'shattana.open-chat';
+const endedQuickChatKey = 'shattana.ended-quick-chat';
 const barHiNotice = 'Hi sent. It stays private unless they say hi too.';
 type Chat = { id: string; nickname: string; drink: string; spot: string; gender: string; matched: boolean; paused?: boolean; shot: boolean; barPending: boolean; peerTyping: boolean; readThrough: string; unread: boolean; unreadIncomingId?: string | null; preview: string | null; photoId?: string | null };
 type State = {
@@ -28,7 +28,6 @@ type State = {
   matches?: Chat[];
   candidate?: BarCandidate;
   newBarChat?: string;
-  advancedChat?: string;
   endedQuickChat?: string;
   messages?: Message[];
   invite?: MeetupInvite;
@@ -67,7 +66,6 @@ export default function Home() {
   const [barCursor, setBarCursor] = useState('');
   const [editingBar, setEditingBar] = useState(false);
   const [barReport, setBarReport] = useState(false);
-  const [meetup, setMeetup] = useState<ReturnType<typeof afterHours>>();
   const [chatId, setChatId] = useState('');
   const [nickname, setNickname] = useState('');
   const [adult, setAdult] = useState(false);
@@ -85,7 +83,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [reportLastTarget, setReportLastTarget] = useState('');
-  const [endingQuickChat, setEndingQuickChat] = useState(false);
+  const [endedQuickChat, setEndedQuickChat] = useState<string>();
   const [matchAnnouncement, setMatchAnnouncement] = useState('');
   const [connectingChat, setConnectingChat] = useState('');
   const [sentShot, setSentShot] = useState('');
@@ -104,7 +102,6 @@ export default function Home() {
   const followThread = useRef(true);
   const revision = useRef(0);
   const requestInProgress = useRef(false);
-  const endingChat = useRef(false);
   const lastHeartbeat = useRef(0);
   const connectionLost = useRef(false);
   const latestIncoming = useRef<Map<string, bigint>>(undefined);
@@ -132,16 +129,10 @@ export default function Home() {
   const retryMessage = failedSend && failedSend.chatId === chat?.id && failedSend.body === draft && failedSend.replyTo === replyTarget?.id
     ? failedSend : undefined;
 
-  async function showEndedQuickChat() {
-    endingChat.current = true;
-    setEndingQuickChat(true);
-    setReport(false);
-    await new Promise<void>(resolve => window.setTimeout(resolve, 1800));
-    endingChat.current = false;
-    setEndingQuickChat(false);
-    setView('home');
-    setMode('quick');
-    setChatId('');
+  function rememberQuickChatEnd(id?: string) {
+    setEndedQuickChat(id);
+    if (id) sessionStorage.setItem(endedQuickChatKey, id);
+    else sessionStorage.removeItem(endedQuickChatKey);
   }
 
   async function request(action?: string, fields: Record<string, unknown> = {}, selected = chatId, before?: string) {
@@ -198,6 +189,7 @@ export default function Home() {
   useEffect(() => {
     const savedChat = sessionStorage.getItem(openChatKey);
     if (savedChat) setChatId(savedChat);
+    setEndedQuickChat(sessionStorage.getItem(endedQuickChatKey) ?? undefined);
   }, []);
 
   useEffect(() => {
@@ -228,7 +220,7 @@ export default function Home() {
         const now = Date.now();
         const selected = chatId || data?.active?.id || (data?.selected?.barPending ? data.selected.id : undefined);
         const activity = typingActivity.current;
-        const typing = !endingChat.current && activity !== null && activity.chatId === selected && now - activity.at < 2400;
+        const typing = activity !== null && activity.chatId === selected && now - activity.at < 2400;
         const heartbeat = joined && (connectionLost.current || now - lastHeartbeat.current > (waiting || data?.active ? 12000 : 35000));
         const payload = await request(heartbeat ? 'heartbeat' : typing ? 'typing' : undefined, {}, selected);
         if (heartbeat) lastHeartbeat.current = Date.now();
@@ -236,20 +228,17 @@ export default function Home() {
         connectionLost.current = false;
         setReconnecting(false);
         const previousQuickChat = data?.active?.id;
-        if (view === 'home' && previousQuickChat && payload.advancedChat === previousQuickChat) {
-          await showEndedQuickChat();
-          if (payload.active) setConnectingChat(payload.active.id);
-          setData(payload);
-          return;
-        }
         if (view === 'home' && waiting && payload.active && payload.active.id !== previousQuickChat) {
           setConnectingChat(payload.active.id);
         }
         setData(payload);
         if (!data) setError('');
-        if (payload.endedQuickChat === chatId || (view === 'home' && previousQuickChat && payload.active?.id !== previousQuickChat &&
-          !payload.matches?.some(match => match.id === previousQuickChat))) {
-          setNotice('Chat ended. Start a new Quick Chat whenever you’re ready.');
+        if (payload.active || payload.profile?.waiting) {
+          rememberQuickChatEnd();
+        } else if (payload.endedQuickChat) {
+          rememberQuickChatEnd(payload.endedQuickChat);
+        } else if (previousQuickChat && !payload.matches?.some(match => match.id === previousQuickChat)) {
+          rememberQuickChatEnd(previousQuickChat);
         }
         if (payload.profile && !hydrated.current) {
           hydrated.current = true;
@@ -286,12 +275,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, waiting, data?.active?.id, data?.selected?.barPending, joined, view, mode, barCursor]);
 
-  useEffect(() => {
-    const update = () => setMeetup(afterHours(new Date()));
-    update();
-    const timer = window.setInterval(update, 30000);
-    return () => window.clearInterval(timer);
-  }, []);
   useEffect(() => { setBarReport(false); }, [data?.candidate?.id, mode]);
   useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); setReplySelection(undefined); setMeetupDraft(undefined); typingActivity.current = null; }, [chat?.id]);
   useLayoutEffect(() => { followThread.current = true; }, [chat?.id]);
@@ -319,8 +302,8 @@ export default function Home() {
       historyAnchor.current = null;
       return;
     }
-    if (thread.current && (followThread.current || endingQuickChat)) thread.current.scrollTop = thread.current.scrollHeight;
-  }, [lastMessage, chat?.id, chat?.peerTyping, invite?.version, matchAnnouncement, endingQuickChat, history, replyTarget?.id]);
+    if (thread.current && followThread.current) thread.current.scrollTop = thread.current.scrollHeight;
+  }, [lastMessage, chat?.id, chat?.peerTyping, invite?.version, matchAnnouncement, history, replyTarget?.id]);
 
   useEffect(() => {
     if (!chat?.matched || !matchingMessages) return;
@@ -378,7 +361,7 @@ export default function Home() {
   }, [inConversation]);
 
   async function act(action: string, fields: Record<string, unknown> = {}, onError?: (message: string) => void) {
-    if (requestInProgress.current || endingChat.current) {
+    if (requestInProgress.current) {
       onError?.('Another request is in progress. Try again in a moment.');
       return false;
     }
@@ -391,8 +374,12 @@ export default function Home() {
       const payload = await request(action, fields, chat?.id ?? chatId);
       connectionLost.current = false;
       setReconnecting(false);
-      if (action === 'next') await showEndedQuickChat();
-      if (['find', 'next', 'after-hours'].includes(action) && payload.active && payload.active.id !== chat?.id) {
+      if (action === 'next') {
+        rememberQuickChatEnd(payload.active || payload.profile?.waiting ? undefined : payload.endedQuickChat);
+      } else if (['join', 'find', 'leave', 'end-session', 'delete-data'].includes(action)) {
+        rememberQuickChatEnd();
+      }
+      if (['find', 'next'].includes(action) && payload.active && payload.active.id !== chat?.id) {
         setConnectingChat(payload.active.id);
       }
       if ((action === 'bar-next' || action === 'bar-hi') && payload.candidate && payload.candidate.id !== data?.candidate?.id) {
@@ -528,12 +515,12 @@ export default function Home() {
     if (await act(action, { ...fields, version: meetupDraft.version, ...response })) setMeetupDraft(undefined);
   }
 
-  function lastChatReport(target: string, inThread = false) {
+  function lastChatReport(target: string) {
     const expanded = reportLastTarget === target;
-    return <div className={inThread ? 'last-chat-report last-chat-report-thread' : 'last-chat-report'}>
+    return <div className="last-chat-report">
       <button className="secondary" aria-expanded={expanded} onClick={() => setReportLastTarget(expanded ? '' : target)}>Report last chat</button>
       {expanded && <div className="pills" aria-label="Report reason">
-        {reasons.map(reason => <button key={reason} disabled={busy || endingQuickChat}
+        {reasons.map(reason => <button key={reason} disabled={busy}
           onClick={() => void act('report-last', { chatId: target, reason })}>{reason}</button>)}
       </div>}
     </div>;
@@ -551,16 +538,16 @@ export default function Home() {
     <div ref={shell} className={chat ? 'shell chat-shell' : 'shell'} onPointerDown={showTapFeedback}
       onPointerUp={clearTapFeedback} onPointerCancel={clearTapFeedback}>
       <header className="masthead">
-        <button className="brand" disabled={endingQuickChat} onClick={() => navigate('home')}>
+        <button className="brand" onClick={() => navigate('home')}>
           <Image className="brand-icon" src={shattanaLogo} alt="" width={48} height={48}
             sizes="(max-width: 760px) 40px, 48px" />
           <span>shattana<span className="brand-accent">!</span></span>
         </button>
         {joined && <nav aria-label="Main navigation">
-          <button disabled={endingQuickChat} aria-current={view === 'home' ? 'page' : undefined} onClick={() => navigate('home')}>
+          <button aria-current={view === 'home' ? 'page' : undefined} onClick={() => navigate('home')}>
             <Shuffle size={16} aria-hidden="true" /><span className="nav-label">Discover</span>
           </button>
-          <button disabled={endingQuickChat} aria-current={view === 'matches' ? 'page' : undefined} onClick={() => navigate('matches')}>
+          <button aria-current={view === 'matches' ? 'page' : undefined} onClick={() => navigate('matches')}>
             <Heart size={16} aria-hidden="true" /><span className="nav-label">Matches{' '}
               {matches.length > 0 && <span className="count">{matches.length}</span>}
             </span>
@@ -600,7 +587,7 @@ export default function Home() {
             <button type="button" className="secondary" aria-label="Dismiss message alert" onClick={() => setMessageAlert(undefined)}>Dismiss</button>
           </div>}
           {notice && notice !== barHiNotice && (!chat || notice === 'Report submitted. This guest has been blocked.') && <p className="notice" role="status">{notice}</p>}
-          {!endingQuickChat && data?.lastReportableChat && lastChatReport(data.lastReportableChat)}
+          {data?.lastReportableChat && lastChatReport(data.lastReportableChat)}
           {!data && !error && <p role="status" className="card muted">Loading Shattana…</p>}
 
           {data?.suspended && <p className="card" role="status">This browser is suspended from joining Shattana.
@@ -651,12 +638,15 @@ export default function Home() {
               <div className="tile-icon"><Shuffle size={23} /></div>
               <h2 role="status">Finding someone…</h2>
               <p>Keep this tab open. We’ll open the chat when someone joins.</p>
-              <p>The green count includes guests who are browsing or already in a chat. Try <a href="#after-hours">After Hours</a> when more people are likely to join.</p>
+              <p>The green count includes guests who are browsing or already in a chat.</p>
               <div className="queue-progress" aria-hidden="true" />
               <button className="secondary" onClick={() => void act('cancel')} disabled={busy}>Cancel search</button>
             </section>
             : <section className="card discovery-card">
-              <div className="card-head"><h2>Quick Chat</h2><p>Get paired at random. Choose an icebreaker or jump right in.</p></div>
+              <div className="card-head">
+                <h2 role={endedQuickChat ? 'status' : undefined}>{endedQuickChat ? 'Chat ended' : 'Quick Chat'}</h2>
+                <p>Get paired at random. Choose an icebreaker or jump right in.</p>
+              </div>
               <fieldset className="fields"><label>Gender <span>(optional, visible in chat)</span>
                 <select value={quickGender} onChange={event => setQuickGender(event.target.value)}>
                   <option value="">Prefer not to share</option>
@@ -665,16 +655,11 @@ export default function Home() {
               </label></fieldset>
               <fieldset><legend>What’s your round? <span>Optional</span></legend><div className="pills">{drinks.map(option => <button type="button" key={option} aria-pressed={drink === option} onClick={() => setDrink(drink === option ? '' : option)}>{option}</button>)}</div></fieldset>
               {availableSpots.length > 0 && <fieldset><legend>Where’s your spot? <span>Optional</span></legend><div className="pills spot-options">{availableSpots.map(option => <button type="button" key={option} aria-pressed={spot === option} onClick={() => setSpot(spot === option ? '' : option)}>{option}</button>)}</div></fieldset>}
-              <button className="primary" disabled={busy} onClick={() => void act('find', { drink, spot, quickGender })}>{busy ? 'Starting…' : 'Start Quick Chat'} <ArrowRight size={19} /></button>
+              <button className="primary" disabled={busy} onClick={() => void act('find', { drink, spot, quickGender })}>
+                {busy ? 'Starting…' : endedQuickChat ? 'Find someone new' : 'Start Quick Chat'} <ArrowRight size={19} />
+              </button>
             </section>}
           </div>}
-
-          {joined && view === 'home' && !chat && <section className="after-hours" id="after-hours">
-            <div><h3>After Hours</h3><p>{meetup?.tonight ? 'Tonight’s meetup started at 9 PM.' : meetup ? `Next meetup Friday, ${meetup.date} at 9 PM.` : 'Fridays at 9 PM.'} Bacolod time. Everyone joins the Quick Chat pool.</p></div>
-            <button className="secondary" disabled={busy || waiting} onClick={async () => {
-              if (await act('after-hours', { drink, spot, quickGender })) setMode('quick');
-            }}>{waiting ? 'In the queue' : 'Join Quick Chat'}</button>
-          </section>}
 
           {joined && view === 'matches' && !chat && <section className="card">
             <div className="card-head"><span className="tile-icon"><Heart size={22} /></span><h2>Matches</h2>{!matches.length && <p>Mutual hellos and shots are saved here.</p>}</div>
@@ -699,15 +684,15 @@ export default function Home() {
               <div className="peer"><h2>{chat.nickname}</h2><p>{[chat.gender, chat.matched ? 'Saved match' : 'Quick Chat'].filter(Boolean).join(' · ')}</p></div>
             </div>
             <div className="chat-controls">
-              <button className="secondary" disabled={busy || endingQuickChat} onClick={async () => {
+              <button className="secondary" disabled={busy} onClick={async () => {
                 if (!chat.matched) { await act('leave'); return; }
                 if (!chat.barPending || await act('bar-dismiss')) navigate('matches');
               }}>{chat.matched ? 'Back to Matches' : 'Leave chat'}</button>
-              {!chat.matched && <button className="secondary" disabled={busy || endingQuickChat} onClick={() => void act('next')}>Next chat</button>}
+              {!chat.matched && <button className="secondary" disabled={busy} onClick={() => void act('next')}>Next chat</button>}
               {chat.matched && !chat.paused && data?.savedMatchFeatures && <button className="secondary" disabled={busy || invite?.status === 'pending' || invite?.status === 'accepted'}
                 aria-expanded={meetupDraft?.kind === 'propose'} onClick={() => setMeetupDraft(meetupDraft?.kind === 'propose'
                   ? undefined : { kind: 'propose', version: invite?.version ?? null })}>G ta?</button>}
-              <button className="secondary chat-menu" disabled={endingQuickChat} aria-controls="chat-moderation" aria-expanded={report} onClick={() => {
+              <button className="secondary chat-menu" aria-controls="chat-moderation" aria-expanded={report} onClick={() => {
                 setReport(!report);
                 setConfirmRemove(false);
               }}><Flag size={16} /> Chat menu</button>
@@ -732,7 +717,7 @@ export default function Home() {
             </div>
             {!chat.matched && <div className="shot-control">
               {chat.shot ? <p className={`shot-note${sentShot === chat.id ? ' motion-fade' : ''}`} role="status">Shot sent · only you can see this</p>
-                : <button className="secondary shot-button" disabled={busy || endingQuickChat} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
+                : <button className="secondary shot-button" disabled={busy} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
             </div>}
             {chat.matched && !chat.paused && meetupDraft && <MeetupEditor key={meetupDraft.version ?? 'new'} draft={meetupDraft} venues={availableSpots} extended={Boolean(data?.extendedMeetups)} busy={busy}
               cancel={() => setMeetupDraft(undefined)} submit={fields => void submitMeetup(fields)} />}
@@ -743,7 +728,7 @@ export default function Home() {
               {chat.matched && canLoadEarlier && <div className="history-control">
                 <button className="secondary" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{loadingEarlier ? 'Loading…' : 'Load earlier'}</button>
               </div>}
-              {!data?.messages?.length && !chat.matched && !endingQuickChat && <div className="first-message">
+              {!data?.messages?.length && !chat.matched && <div className="first-message">
                 <div className="icebreaker-lines">{icebreakers.map(line => <p key={line}>{line}</p>)}</div>
                 <button type="button" className="secondary" onClick={() => {
                   if (!draft) setDraft('g!');
@@ -751,7 +736,7 @@ export default function Home() {
                 }}>g!</button>
               </div>}
               <MessageBubbles messages={messages} liveFrom={matchingMessages?.[0]?.id} nickname={chat.nickname}
-                onReply={data?.messageReplies && !chat.paused && !endingQuickChat ? message => {
+                onReply={data?.messageReplies && !chat.paused ? message => {
                   setReplySelection({ chatId: chat.id, message });
                   composer.current?.focus();
                 } : undefined} />
@@ -760,12 +745,10 @@ export default function Home() {
                 cancelPlan={data?.meetupCancellation ? () => act('meetup-cancel', { version: invite.version, confirmation: 'CANCEL' }) : undefined}
                 counter={() => setMeetupDraft({ kind: 'counter', version: invite.version, venue: invite.venue, date: invite.date, time: invite.time })}
                 respond={response => void act('meetup-respond', { version: invite.version, response })} />}
-              {!chat.paused && chat.peerTyping && !endingQuickChat && <div className="typing-bubble" role="status" aria-label={`${chat.nickname} is typing`}>
+              {!chat.paused && chat.peerTyping && <div className="typing-bubble" role="status" aria-label={`${chat.nickname} is typing`}>
                 <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
               </div>}
               {matchAnnouncement === chat.id && <p className="match-announcement motion-fade">Ti, pareho kamo gali.</p>}
-              {endingQuickChat && <p className="match-announcement" role="status">Chat ended. Looking for someone new…</p>}
-              {endingQuickChat && lastChatReport(chat.id, true)}
             </div>
             {replyTarget && !chat.paused && <div className="reply-draft" aria-label="Replying to a message">
               <blockquote className="message-quote"><strong>Replying to {replyTarget.mine ? 'your message' : chat.nickname}</strong>
@@ -776,12 +759,12 @@ export default function Home() {
               }}>Cancel</button>
             </div>}
             {chat.paused ? <p className="notice" role="status">{pausedChatMessage}</p> : <form className="composer" onSubmit={send}>
-              <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy || endingQuickChat} value={draft} onChange={event => {
+              <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy} value={draft} onChange={event => {
                 const value = event.target.value;
                 setDraft(value);
                 typingActivity.current = value.trim() ? { chatId: chat.id, at: Date.now() } : null;
               }} />
-              <button className="primary send" disabled={busy || reconnecting || endingQuickChat || !draft.trim()}>
+              <button className="primary send" disabled={busy || reconnecting || !draft.trim()}>
                 {sendingMessage ? 'Sending…' : retryMessage ? 'Retry' : 'Send'}
               </button>
             </form>}

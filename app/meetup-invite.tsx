@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { bacolodDate, formatMeetupDate } from './after-hours';
+import { bacolodDate, formatMeetupDate } from './bacolod-time';
 
 export type MeetupInvite = {
   version: string;

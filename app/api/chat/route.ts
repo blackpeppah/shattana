@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { transact } from '../../../db/store';
 import { genders, barInterests, barReportReasons, drinks, pausedChatMessage, spots, reasons } from '../../options';
 import { challengeConfig, verifyJoinChallenge } from './turnstile';
-import { bacolodDate } from '../../after-hours';
+import { bacolodDate } from '../../bacolod-time';
 import { allowAttempt, connectionSubject } from '../safety';
 import { barCardEligibility, barEligibility, browserCookie, browserSuspended, guestCookie, guestSuspended, sameGuestOrigin, uuid } from './access';
 import { cleanPhotoFiles, photoStorageAvailable, queuePhotoDeletion } from '../profile-photo/storage';
@@ -152,8 +152,10 @@ async function handle(req: NextRequest, write: boolean) {
         exists(select 1 from pg_attribute where attrelid=to_regclass('message') and not attisdropped and attname='client_nonce') as retries,
         exists(select 1 from pg_attribute where attrelid=to_regclass('message') and not attisdropped and attname='reply_to') as replies,
         exists(select 1 from pg_attribute where attrelid=to_regclass('meetup_invite') and not attisdropped and attname='canceled_at') as cancellations,
+        (select count(*) from pg_attribute where attrelid=to_regclass('chat') and not attisdropped
+          and attname in ('a_pressed_next','b_pressed_next'))=2 as next_taps,
         (select count(*) from pg_attribute where attrelid=to_regclass('meetup_invite') and not attisdropped
-          and attname in ('meetup_time','withdrawn_at'))=2 as meetup`) : [{ retries: true, meetup: true, replies: true, cancellations: true }];
+          and attname in ('meetup_time','withdrawn_at'))=2 as meetup`) : [{ retries: true, meetup: true, replies: true, cancellations: true, next_taps: true }];
       const retrySends = extraSchema.retries === true;
       const messageReplies = retrySends && extraSchema.replies === true;
       const extendedMeetups = savedMatchFeatures && extraSchema.meetup === true;
@@ -163,7 +165,7 @@ async function handle(req: NextRequest, write: boolean) {
         ${extendedMeetups ? "when withdrawn_at is not null then 'withdrawn'" : ''}
         when status in ('pending','accepted') and ${meetupDeadline}<=(now() at time zone 'Asia/Manila')
           then case when status='accepted' then 'ended' else 'expired' end else status end`;
-      const action = input.action === 'after-hours' ? 'find' : input.action;
+      const action = input.action;
       const showBar = req.nextUrl.searchParams.get('bar') === '1';
       let newBarChat: unknown;
       if (write) {
@@ -176,22 +178,32 @@ async function handle(req: NextRequest, write: boolean) {
         await query("update guest set seen_at=now() where id=$1", [id]);
       }
       const [search] = action === 'heartbeat' ? await query('select id from guest where id=$1 and queued_at is not null', [id]) : [];
-      if (action === 'find' || action === 'next' || search) {
-        if (action === 'next') {
-          if (!uuid(input.chatId)) throw new InputError('Choose a conversation.');
+      let searchAgain = false;
+      if (action === 'next') {
+        if (!uuid(input.chatId)) throw new InputError('Choose a conversation.');
+        const recordTaps = extraSchema.next_taps === true;
+        const [previous] = await query(`select c.closed,c.ended_by_next,
+          ${recordTaps ? `case when c.a=$1 then c.a_pressed_next else c.b_pressed_next end as tapped,
+            c.a_pressed_next or c.b_pressed_next as has_tap` : 'false as tapped, false as has_tap'}
+          from chat c where c.id=$2 and (c.a=$1 or c.b=$1) and not c.matched`, [id, input.chatId]);
+        if (!previous) throw new InputError('This Quick Chat has ended.');
+        if (!previous.tapped && (!previous.closed || (previous.ended_by_next && previous.has_tap))) {
+          // The other participant may have just sent their own Next. An older chat cannot restart a search.
+          const [newer] = previous.closed ? await query(`select 1 from chat c join chat previous on previous.id=$2
+            where (c.a=$1 or c.b=$1) and (c.created_at,c.id)>(previous.created_at,previous.id) limit 1`, [id, input.chatId]) : [];
+          searchAgain = !newer;
+        }
+        if (searchAgain) {
           if (guestControls && !await allowAttempt(query, 'next', String(id), 30, 5)) {
             throw new MessageRateError('Give it a moment before starting another chat.', 30);
           }
-          const [previous] = await query(`select a,b,closed from chat
-            where id=$2 and (a=$1 or b=$1) and not matched`, [id, input.chatId]);
-          if (!previous) throw new InputError('This Quick Chat has ended.');
-          if (!previous.closed) {
-            await query('update chat set closed=true, ended_at=now(), ended_by_next=true where id=$1', [input.chatId]);
-            const peer = previous.a === id ? previous.b : previous.a;
-            await query(`update guest set queued_at=coalesce(queued_at,now()) where id=$1
-              and seen_at>now()-interval '35 seconds'`, [peer]);
-          }
-        } else if (action === 'find') {
+          await query(`update chat set closed=true, ended_at=coalesce(ended_at,now()), ended_by_next=true
+            ${recordTaps ? ', a_pressed_next=a_pressed_next or a=$1, b_pressed_next=b_pressed_next or b=$1' : ''}
+            where id=$2 and (a=$1 or b=$1)`, [id, input.chatId]);
+        }
+      }
+      if (action === 'find' || searchAgain || search) {
+        if (action === 'find') {
           const spot = input.spot === 'Acacia' && !availableSpots.includes('Acacia') ? 'Akasya' : input.spot;
           const gender = genders.includes(input.quickGender) ? input.quickGender : '';
           await query('update guest set drink=$2,spot=$3,quick_gender=$4 where id=$1',
@@ -414,6 +426,7 @@ async function handle(req: NextRequest, write: boolean) {
         if (action === 'leave') {
           if (chat.matched) throw new InputError('This conversation is already saved in Matches.');
           await query('update chat set closed=true, ended_at=now() where id=$1', [chat.id]);
+          await query('update guest set queued_at=null where id=$1', [id]);
         }
         if (action === 'unmatch') {
           if (!chat.matched) throw new InputError('Only saved matches can be removed.');
@@ -469,7 +482,7 @@ async function handle(req: NextRequest, write: boolean) {
       const active = chats.find(chat => !chat.matched);
       const requested = newBarChat ?? (write && action !== 'report-last' ? input.chatId : req.nextUrl.searchParams.get('chat'));
       const [ended] = uuid(requested) && !chats.some(chat => chat.id === requested)
-        ? await query('select id,ended_by_next from chat where id=$2 and (a=$1 or b=$1) and not matched', [id, requested]) : [];
+        ? await query('select id from chat where id=$2 and (a=$1 or b=$1) and not matched', [id, requested]) : [];
       const barMatch = chats.find(chat => chat.barPending);
       const requestedChat = action === 'bar-dismiss' ? undefined : chats.find(chat => chat.id === requested);
       const selected = requestedChat ?? barMatch ?? active;
@@ -492,8 +505,7 @@ async function handle(req: NextRequest, write: boolean) {
         select c.id from chat c where (c.a=$1 or c.b=$1) and c.closed
           and c.ended_at>now()-interval '15 minutes' order by c.ended_at desc limit 1
         ) recent where not exists (select 1 from report r where r.actor=$1 and r.chat_id=recent.id)`, [id]);
-      return { profile: current, active, selected, candidate, newBarChat, advancedChat: ended?.ended_by_next ? ended.id : undefined,
-        endedQuickChat: ended?.id, matches: chats.filter(chat => chat.matched), messages,
+      return { profile: current, active, selected, candidate, newBarChat, endedQuickChat: ended?.id, matches: chats.filter(chat => chat.matched), messages,
         invite, savedMatchFeatures, retrySends, messageReplies, extendedMeetups, meetupCancellation, hasEarlier, guestControls, photosReady,
         availableSpots, lastReportableChat: lastReportable?.id, activeUsers: await activeUsers() };
     });
