@@ -6,6 +6,9 @@ import { moderatorCookie, moderatorCredentials, moderatorSameOrigin, moderatorTr
 export const moderationReply = (body: object, status = 200) =>
   NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 
+export const reportId = (id: unknown): id is string => typeof id === 'string' && /^[1-9]\d{0,18}$/.test(id) &&
+  BigInt(id) <= BigInt('9223372036854775807');
+
 export function moderationDenied(req: NextRequest, write: boolean) {
   const credentials = moderatorCredentials();
   if (!credentials) return moderationReply({ error: 'Moderation is unavailable.' }, 404);
@@ -24,10 +27,10 @@ export async function setGuestSuspension(query: Query, id: unknown, suspended: b
   if (guest && suspended) {
     if (guest.browser) {
       const linked = await query<{ id: string }>('update guest set queued_at=null where browser_id=$1 returning id', [guest.browser]);
-      await query('update chat set closed=true, ended_at=now() where not closed and (a=any($1::uuid[]) or b=any($1::uuid[]))',
+      await query('update chat set closed=true, ended_at=now() where not closed and not matched and (a=any($1::uuid[]) or b=any($1::uuid[]))',
         [linked.map(row => row.id)]);
     } else {
-      await query('update chat set closed=true, ended_at=now() where not closed and (a=$1 or b=$1)', [id]);
+      await query('update chat set closed=true, ended_at=now() where not closed and not matched and (a=$1 or b=$1)', [id]);
     }
   }
   return Boolean(guest);

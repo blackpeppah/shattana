@@ -206,7 +206,7 @@ function DashboardSection({ section }: { section: Exclude<Section, 'reports'> })
           <span className={`admin-state${guest.status === 'active' ? ' is-active' : ''}`}>{guestStatus[guest.status]}</span>
           {guest.status !== 'ended' && <button className="secondary" disabled={saving} onClick={() => {
             const suspended = guest.status !== 'suspended';
-            if (!suspended || window.confirm('Suspend this guest and close their open conversations?')) {
+            if (!suspended || window.confirm('Suspend this guest, end their active Quick Chats, and pause their saved matches?')) {
               void change({ action: 'set-suspension', id: guest.id, suspended }, suspended ? 'Guest suspended.' : 'Guest access restored.');
             }
           }}>{guest.status === 'suspended' ? 'Reinstate' : 'Suspend'}</button>}

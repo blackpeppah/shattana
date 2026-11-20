@@ -146,3 +146,33 @@ create index if not exists guest_photo_cleanup_due on guest_photo_cleanup (delet
 -- Keep browser suspension separate from the cookie that grants access to a guest session.
 alter table guest add column if not exists browser_id uuid;
 create index if not exists guest_suspended_browser on guest(browser_id) where suspended_at is not null;
+
+-- Retain immutable photo revisions for pending reports and recently displayed cards.
+alter table report add column if not exists photo_id uuid;
+alter table guest_photo_cleanup add column if not exists deleting boolean not null default false;
+create index if not exists report_pending_photo on report(target,photo_id,created_at)
+  where review_status='pending' and photo_id is not null;
+create index if not exists report_pending_chat on report(chat_id,created_at)
+  where review_status='pending' and chat_id is not null;
+create table if not exists guest_photo_view (
+  viewer uuid not null references guest(id),
+  owner uuid not null references guest(id),
+  photo_id uuid not null,
+  expires_at timestamptz not null,
+  primary key (viewer,owner,photo_id)
+);
+alter table guest_photo_view enable row level security;
+create index if not exists guest_photo_view_retention on guest_photo_view(owner,photo_id,expires_at);
+
+create or replace function public.shattana_pending_chat_evidence(conversation uuid, content_at timestamptz, closed_at timestamptz)
+returns boolean language sql stable set search_path = pg_catalog, public as $$
+  select closed_at > now()-interval '90 days' and exists (
+    select 1 from public.report r where r.chat_id=conversation and r.review_status='pending'
+    and r.created_at>now()-interval '90 days' and (content_at is null or content_at<=r.created_at)
+  );
+$$;
+revoke execute on function public.shattana_pending_chat_evidence(uuid,timestamptz,timestamptz) from public;
+
+-- Keep reply IDs after the original body is deleted by guest deletion or retention.
+alter table message add column if not exists reply_to bigint;
+alter table meetup_invite add column if not exists canceled_at timestamptz;

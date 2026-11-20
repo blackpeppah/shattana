@@ -3,20 +3,21 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent } from 'react';
 import Image from 'next/image';
 import { ArrowRight, Flag, Heart, MessageCircle, Moon, Shuffle, MapPin, ShieldCheck, Sun } from 'lucide-react';
-import { drinks, genders, spots, reasons } from './options';
+import { drinks, genders, pausedChatMessage, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
 import { afterHours } from './after-hours';
 import { DiscoverGuide } from './discover-guide';
 import { GuestPrivacy } from './guest-privacy';
 import { JoinChallenge } from './join-challenge';
 import { MeetupCard, MeetupEditor, type MeetupDraft, type MeetupInvite } from './meetup-invite';
+import { MessageBubbles, type Message } from './chat-messages';
+import { trackIncomingMessages } from './message-alerts.mjs';
 import { PhotoAvatar, type PhotoSettings } from './profile-photo';
 import shattanaLogo from '../shattana-logo.png';
 
 const openChatKey = 'shattana.open-chat';
 const barHiNotice = 'Hi sent. It stays private unless they say hi too.';
-type Chat = { id: string; nickname: string; drink: string; spot: string; gender: string; matched: boolean; shot: boolean; barPending: boolean; peerTyping: boolean; readThrough: string; unread: boolean; preview: string | null; photoId?: string | null };
-type Message = { id: string; mine: boolean; body: string };
+type Chat = { id: string; nickname: string; drink: string; spot: string; gender: string; matched: boolean; paused?: boolean; shot: boolean; barPending: boolean; peerTyping: boolean; readThrough: string; unread: boolean; unreadIncomingId?: string | null; preview: string | null; photoId?: string | null };
 type State = {
   availableSpots?: string[];
   profile: (BarProfile & { nickname: string; drink: string; spot: string; quickGender: string; waiting: boolean }) | null;
@@ -28,11 +29,14 @@ type State = {
   candidate?: BarCandidate;
   newBarChat?: string;
   advancedChat?: string;
+  endedQuickChat?: string;
   messages?: Message[];
   invite?: MeetupInvite;
   savedMatchFeatures?: boolean;
   retrySends?: boolean;
+  messageReplies?: boolean;
   extendedMeetups?: boolean;
+  meetupCancellation?: boolean;
   hasEarlier?: boolean;
   guestControls?: boolean;
   photosReady?: boolean;
@@ -40,11 +44,7 @@ type State = {
   lastReportableChat?: string;
 };
 
-function MessageBubbles({ messages = [], liveFrom }: { messages?: Message[]; liveFrom?: string }) {
-  const [history] = useState(() => new Set(messages.map(message => message.id)));
-  return messages.map(message => <p key={message.id} data-message-id={message.id} data-incoming-id={message.mine ? undefined : message.id}
-    className={`bubble${message.mine ? ' mine' : ''}${history.has(message.id) || (liveFrom && BigInt(message.id) < BigInt(liveFrom)) ? '' : ' motion-rise'}`}>{message.body}</p>);
-}
+class ChatConnectionError extends Error {}
 
 function mergeMessages(previous: Message[], next: Message[]) {
   return Array.from(new Map([...previous, ...next].map(message => [message.id, message])).values())
@@ -77,6 +77,8 @@ export default function Home() {
   const [spot, setSpot] = useState('');
   const [quickGender, setQuickGender] = useState('');
   const [draft, setDraft] = useState('');
+  const [replySelection, setReplySelection] = useState<{ chatId: string; message: Message }>();
+  const [messageAlert, setMessageAlert] = useState<{ chatId: string; messageId: string }>();
   const [error, setError] = useState('');
   const [report, setReport] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -91,7 +93,7 @@ export default function Home() {
   const [meetupDraft, setMeetupDraft] = useState<MeetupDraft>();
   const [reconnecting, setReconnecting] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [failedSend, setFailedSend] = useState<{ chatId: string; nonce: string; body: string }>();
+  const [failedSend, setFailedSend] = useState<{ chatId: string; nonce: string; body: string; replyTo?: string }>();
   const [history, setHistory] = useState<{ chatId: string; messages: Message[]; hasEarlier: boolean }>();
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const composer = useRef<HTMLInputElement>(null);
@@ -104,6 +106,8 @@ export default function Home() {
   const requestInProgress = useRef(false);
   const endingChat = useRef(false);
   const lastHeartbeat = useRef(0);
+  const connectionLost = useRef(false);
+  const latestIncoming = useRef<Map<string, bigint>>(undefined);
   const typingActivity = useRef<{ chatId: string; at: number } | null>(null);
   const requestedReads = useRef(new Map<string, string>());
   const historyAnchor = useRef<{ chatId: string; top: number; height: number; messageId?: string; offset?: number } | null>(null);
@@ -120,8 +124,13 @@ export default function Home() {
   const messages = useMemo(() => savedHistory ? mergeMessages(savedHistory.messages, matchingMessages ?? []) : matchingMessages ?? [],
     [savedHistory, matchingMessages]);
   const canLoadEarlier = savedHistory?.hasEarlier ?? data?.hasEarlier;
-  const invite = chat?.matched && data?.selected?.id === chat.id ? data.invite : undefined;
+  const invite = chat?.matched && !chat.paused && data?.selected?.id === chat.id ? data.invite : undefined;
   const inConversation = Boolean(chat);
+  const browsingDiscover = view === 'home' && !chat && !chatId;
+  const alertMatch = browsingDiscover ? matches.find(match => match.id === messageAlert?.chatId && match.unread) : undefined;
+  const replyTarget = replySelection && replySelection.chatId === chat?.id ? replySelection.message : undefined;
+  const retryMessage = failedSend && failedSend.chatId === chat?.id && failedSend.body === draft && failedSend.replyTo === replyTarget?.id
+    ? failedSend : undefined;
 
   async function showEndedQuickChat() {
     endingChat.current = true;
@@ -143,13 +152,20 @@ export default function Home() {
       params.set('bar', '1');
       if (barCursor && action !== 'bar-reset' && action !== 'bar-profile') params.set('after', barCursor);
     }
-    const response = await fetch('/api/chat?' + params, action ? {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chatId: selected, action, ...fields }),
-      keepalive: action === 'read',
-      signal: AbortSignal.timeout(10000),
-    } : { cache: 'no-store', signal: AbortSignal.timeout(10000) });
-    const payload = await response.json();
+    let response: Response;
+    let payload;
+    try {
+      response = await fetch('/api/chat?' + params, action ? {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: selected, action, ...fields }),
+        keepalive: action === 'read',
+        signal: AbortSignal.timeout(10000),
+      } : { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+      payload = await response.json();
+    } catch {
+      throw new ChatConnectionError('Couldn’t connect to Shattana. Try again in a moment.');
+    }
+    if (response.status >= 500) throw new ChatConnectionError(payload.error || 'Shattana is temporarily unavailable.');
     if (!response.ok) throw new Error(payload.error || 'Please try again.');
     return payload as State;
   }
@@ -185,21 +201,39 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!data?.profile) {
+      latestIncoming.current = undefined;
+      setMessageAlert(undefined);
+      return;
+    }
+    const { seen, alert } = trackIncomingMessages(latestIncoming.current, data.matches ?? [], browsingDiscover);
+    latestIncoming.current = seen;
+    if (alert) setMessageAlert(alert);
+    else if (!browsingDiscover) setMessageAlert(undefined);
+  }, [data, browsingDiscover]);
+
+  useEffect(() => {
     let live = true;
     let inFlight = false;
+    function lostConnection() {
+      connectionLost.current = true;
+      setReconnecting(true);
+    }
     async function refresh() {
       if (inFlight || requestInProgress.current || document.hidden) return;
+      if (!navigator.onLine) { lostConnection(); return; }
       inFlight = true;
       const version = revision.current;
       try {
         const now = Date.now();
-        const selected = chatId || data?.selected?.id;
+        const selected = chatId || data?.active?.id || (data?.selected?.barPending ? data.selected.id : undefined);
         const activity = typingActivity.current;
         const typing = !endingChat.current && activity !== null && activity.chatId === selected && now - activity.at < 2400;
-        const heartbeat = joined && now - lastHeartbeat.current > (waiting || data?.active ? 12000 : 35000);
+        const heartbeat = joined && (connectionLost.current || now - lastHeartbeat.current > (waiting || data?.active ? 12000 : 35000));
         const payload = await request(heartbeat ? 'heartbeat' : typing ? 'typing' : undefined, {}, selected);
         if (heartbeat) lastHeartbeat.current = Date.now();
         if (!live || version !== revision.current) return;
+        connectionLost.current = false;
         setReconnecting(false);
         const previousQuickChat = data?.active?.id;
         if (view === 'home' && previousQuickChat && payload.advancedChat === previousQuickChat) {
@@ -213,8 +247,8 @@ export default function Home() {
         }
         setData(payload);
         if (!data) setError('');
-        if (view === 'home' && previousQuickChat && payload.active?.id !== previousQuickChat &&
-          !payload.matches?.some(match => match.id === previousQuickChat)) {
+        if (payload.endedQuickChat === chatId || (view === 'home' && previousQuickChat && payload.active?.id !== previousQuickChat &&
+          !payload.matches?.some(match => match.id === previousQuickChat))) {
           setNotice('Chat ended. Start a new Quick Chat whenever you’re ready.');
         }
         if (payload.profile && !hydrated.current) {
@@ -230,7 +264,7 @@ export default function Home() {
       } catch (failure) {
         if (live && version === revision.current) {
           if (!data) setError((failure as Error).message);
-          else setReconnecting(true);
+          else lostConnection();
         }
       } finally {
         inFlight = false;
@@ -240,11 +274,13 @@ export default function Home() {
     const timer = window.setInterval(refresh, waiting || chatId || data?.active || data?.selected?.barPending || mode === 'bar' ? 1800 : 9000);
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('online', refresh);
+    window.addEventListener('offline', lostConnection);
     return () => {
       live = false;
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('online', refresh);
+      window.removeEventListener('offline', lostConnection);
     };
     // A new polling cycle is needed when the conversation or queue changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -257,7 +293,7 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => { setBarReport(false); }, [data?.candidate?.id, mode]);
-  useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); setMeetupDraft(undefined); typingActivity.current = null; }, [chat?.id]);
+  useEffect(() => { setReport(false); setConfirmRemove(false); setDraft(''); setReplySelection(undefined); setMeetupDraft(undefined); typingActivity.current = null; }, [chat?.id]);
   useLayoutEffect(() => { followThread.current = true; }, [chat?.id]);
   useEffect(() => {
     const previous = previousChat.current;
@@ -284,7 +320,7 @@ export default function Home() {
       return;
     }
     if (thread.current && (followThread.current || endingQuickChat)) thread.current.scrollTop = thread.current.scrollHeight;
-  }, [lastMessage, chat?.id, chat?.peerTyping, invite?.version, matchAnnouncement, endingQuickChat, history]);
+  }, [lastMessage, chat?.id, chat?.peerTyping, invite?.version, matchAnnouncement, endingQuickChat, history, replyTarget?.id]);
 
   useEffect(() => {
     if (!chat?.matched || !matchingMessages) return;
@@ -353,6 +389,8 @@ export default function Home() {
     setNotice('');
     try {
       const payload = await request(action, fields, chat?.id ?? chatId);
+      connectionLost.current = false;
+      setReconnecting(false);
       if (action === 'next') await showEndedQuickChat();
       if (['find', 'next', 'after-hours'].includes(action) && payload.active && payload.active.id !== chat?.id) {
         setConnectingChat(payload.active.id);
@@ -400,7 +438,10 @@ export default function Home() {
       else if (action === 'shot' && payload.selected?.shot) setSentShot(payload.selected.id);
       return true;
     } catch (failure) {
-      (onError ?? setError)((failure as Error).message);
+      if (action === 'send' && failure instanceof ChatConnectionError) {
+        connectionLost.current = true;
+        setReconnecting(true);
+      } else (onError ?? setError)((failure as Error).message);
       return false;
     } finally {
       requestInProgress.current = false;
@@ -434,14 +475,14 @@ export default function Home() {
 
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!chat || !draft.trim() || requestInProgress.current) return;
+    if (!chat || chat.paused || reconnecting || !draft.trim() || requestInProgress.current) return;
     typingActivity.current = null;
-    const pending = failedSend?.chatId === chat.id && failedSend.body === draft ? failedSend
-      : { chatId: chat.id, body: draft, nonce: sendNonce() };
+    const pending = retryMessage ?? { chatId: chat.id, body: draft, nonce: sendNonce(), replyTo: replyTarget?.id };
     setSendingMessage(true);
     try {
-      if (await act('send', { body: pending.body, ...(data?.retrySends ? { nonce: pending.nonce } : {}) })) {
+      if (await act('send', { body: pending.body, replyTo: pending.replyTo, ...(data?.retrySends ? { nonce: pending.nonce } : {}) })) {
         setDraft('');
+        setReplySelection(undefined);
         setFailedSend(undefined);
       } else if (data?.retrySends) {
         setFailedSend(pending);
@@ -550,6 +591,14 @@ export default function Home() {
         <div className="panel">
           {error && <p className="error" role="alert">{error}</p>}
           {reconnecting && joined && <p className="notice connection-notice" role="status">Reconnecting…</p>}
+          {alertMatch && <div className="notice message-alert" role="status">
+            <button type="button" className="secondary" onClick={() => {
+              setMessageAlert(undefined);
+              navigate('matches');
+              setChatId(alertMatch.id);
+            }}>New message from {alertMatch.nickname}</button>
+            <button type="button" className="secondary" aria-label="Dismiss message alert" onClick={() => setMessageAlert(undefined)}>Dismiss</button>
+          </div>}
           {notice && notice !== barHiNotice && (!chat || notice === 'Report submitted. This guest has been blocked.') && <p className="notice" role="status">{notice}</p>}
           {!endingQuickChat && data?.lastReportableChat && lastChatReport(data.lastReportableChat)}
           {!data && !error && <p role="status" className="card muted">Loading Shattana…</p>}
@@ -630,12 +679,12 @@ export default function Home() {
           {joined && view === 'matches' && !chat && <section className="card">
             <div className="card-head"><span className="tile-icon"><Heart size={22} /></span><h2>Matches</h2>{!matches.length && <p>Mutual hellos and shots are saved here.</p>}</div>
             {matches.map(match => <button className="match" key={match.id} aria-label={match.nickname}
-              aria-describedby={[match.unread && `unread-${match.id}`, match.preview && `preview-${match.id}`].filter(Boolean).join(' ') || undefined}
+              aria-describedby={[match.unread && `unread-${match.id}`, (match.paused || match.preview) && `preview-${match.id}`].filter(Boolean).join(' ') || undefined}
               onClick={() => setChatId(match.id)}>
               <span className="match-name">
                 <span className="avatar" aria-hidden="true">{Array.from(match.nickname)[0]}</span>
                 <span className="match-copy"><span>{match.nickname}</span>
-                  {match.preview && <span className="match-preview" id={`preview-${match.id}`}>{match.preview}</span>}
+                  {(match.paused || match.preview) && <span className="match-preview" id={`preview-${match.id}`}>{match.paused ? pausedChatMessage : match.preview}</span>}
                 </span>
               </span>
               {match.unread && <><span className="match-unread" aria-hidden="true" /><span hidden id={`unread-${match.id}`}>Unread messages</span></>}
@@ -655,7 +704,7 @@ export default function Home() {
                 if (!chat.barPending || await act('bar-dismiss')) navigate('matches');
               }}>{chat.matched ? 'Back to Matches' : 'Leave chat'}</button>
               {!chat.matched && <button className="secondary" disabled={busy || endingQuickChat} onClick={() => void act('next')}>Next chat</button>}
-              {chat.matched && data?.savedMatchFeatures && <button className="secondary" disabled={busy || invite?.status === 'pending'}
+              {chat.matched && !chat.paused && data?.savedMatchFeatures && <button className="secondary" disabled={busy || invite?.status === 'pending' || invite?.status === 'accepted'}
                 aria-expanded={meetupDraft?.kind === 'propose'} onClick={() => setMeetupDraft(meetupDraft?.kind === 'propose'
                   ? undefined : { kind: 'propose', version: invite?.version ?? null })}>G ta?</button>}
               <button className="secondary chat-menu" disabled={endingQuickChat} aria-controls="chat-moderation" aria-expanded={report} onClick={() => {
@@ -685,7 +734,7 @@ export default function Home() {
               {chat.shot ? <p className={`shot-note${sentShot === chat.id ? ' motion-fade' : ''}`} role="status">Shot sent · only you can see this</p>
                 : <button className="secondary shot-button" disabled={busy || endingQuickChat} onClick={() => void act('shot')}><Heart size={16} /> Shoot Your Shot</button>}
             </div>}
-            {chat.matched && meetupDraft && <MeetupEditor key={meetupDraft.version ?? 'new'} draft={meetupDraft} venues={availableSpots} extended={Boolean(data?.extendedMeetups)} busy={busy}
+            {chat.matched && !chat.paused && meetupDraft && <MeetupEditor key={meetupDraft.version ?? 'new'} draft={meetupDraft} venues={availableSpots} extended={Boolean(data?.extendedMeetups)} busy={busy}
               cancel={() => setMeetupDraft(undefined)} submit={fields => void submitMeetup(fields)} />}
             <div className="thread" ref={thread} role="log" aria-label="Messages" tabIndex={0} onScroll={event => {
               const log = event.currentTarget;
@@ -701,28 +750,41 @@ export default function Home() {
                   composer.current?.focus();
                 }}>g!</button>
               </div>}
-              <MessageBubbles messages={messages} liveFrom={matchingMessages?.[0]?.id} />
-              {invite && <MeetupCard invite={invite} nickname={chat.nickname} busy={busy}
+              <MessageBubbles messages={messages} liveFrom={matchingMessages?.[0]?.id} nickname={chat.nickname}
+                onReply={data?.messageReplies && !chat.paused && !endingQuickChat ? message => {
+                  setReplySelection({ chatId: chat.id, message });
+                  composer.current?.focus();
+                } : undefined} />
+              {invite && <MeetupCard key={invite.version} invite={invite} nickname={chat.nickname} busy={busy || reconnecting}
                 withdraw={data?.extendedMeetups ? () => void act('meetup-withdraw', { version: invite.version }) : undefined}
+                cancelPlan={data?.meetupCancellation ? () => act('meetup-cancel', { version: invite.version, confirmation: 'CANCEL' }) : undefined}
                 counter={() => setMeetupDraft({ kind: 'counter', version: invite.version, venue: invite.venue, date: invite.date, time: invite.time })}
                 respond={response => void act('meetup-respond', { version: invite.version, response })} />}
-              {chat.peerTyping && !endingQuickChat && <div className="typing-bubble" role="status" aria-label={`${chat.nickname} is typing`}>
+              {!chat.paused && chat.peerTyping && !endingQuickChat && <div className="typing-bubble" role="status" aria-label={`${chat.nickname} is typing`}>
                 <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
               </div>}
               {matchAnnouncement === chat.id && <p className="match-announcement motion-fade">Ti, pareho kamo gali.</p>}
               {endingQuickChat && <p className="match-announcement" role="status">Chat ended. Looking for someone new…</p>}
               {endingQuickChat && lastChatReport(chat.id, true)}
             </div>
-            <form className="composer" onSubmit={send}>
+            {replyTarget && !chat.paused && <div className="reply-draft" aria-label="Replying to a message">
+              <blockquote className="message-quote"><strong>Replying to {replyTarget.mine ? 'your message' : chat.nickname}</strong>
+                <span>{replyTarget.body.length > 140 ? `${replyTarget.body.slice(0, 140)}…` : replyTarget.body}</span></blockquote>
+              <button type="button" className="secondary" disabled={busy} aria-label="Cancel reply" onClick={() => {
+                setReplySelection(undefined);
+                composer.current?.focus();
+              }}>Cancel</button>
+            </div>}
+            {chat.paused ? <p className="notice" role="status">{pausedChatMessage}</p> : <form className="composer" onSubmit={send}>
               <input ref={composer} aria-label="Message" placeholder="Say hi…" maxLength={1000} readOnly={busy || endingQuickChat} value={draft} onChange={event => {
                 const value = event.target.value;
                 setDraft(value);
                 typingActivity.current = value.trim() ? { chatId: chat.id, at: Date.now() } : null;
               }} />
-              <button className="primary send" disabled={busy || endingQuickChat || !draft.trim()}>
-                {sendingMessage ? 'Sending…' : failedSend?.chatId === chat.id && failedSend.body === draft ? 'Retry' : 'Send'}
+              <button className="primary send" disabled={busy || reconnecting || endingQuickChat || !draft.trim()}>
+                {sendingMessage ? 'Sending…' : retryMessage ? 'Retry' : 'Send'}
               </button>
-            </form>
+            </form>}
           </section>}
         </div>
         {view === 'home' && !chat && !chatId && <DiscoverGuide afterFaq={<GuestPrivacy

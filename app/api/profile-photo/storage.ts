@@ -83,7 +83,13 @@ export async function readLocalPhoto(viewer: string, guest: string, photo: strin
   if (!token || !/^[0-9a-f]{64}$/.test(token) || !Number.isSafeInteger(expires) || expires <= Date.now() / 1000) return;
   params.delete('token');
   if (!timingSafeEqual(Buffer.from(token, 'hex'), localSignature(viewer, params))) return;
-  return new Uint8Array(await readFile(localFile(guest, photo)));
+  return readPhotoObject(guest, photo);
+}
+
+export async function readPhotoObject(guest: string, photo: string) {
+  if (localPhotoStorage()) return new Uint8Array(await readFile(localFile(guest, photo)));
+  const { response } = await storageRequest(`/object/authenticated/${bucket}/${objectPath(guest, photo)}`, { method: 'GET' });
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 export async function queuePhotoDeletion(query: Query, guest: string, photo: string, reserve = false) {
@@ -92,14 +98,24 @@ export async function queuePhotoDeletion(query: Query, guest: string, photo: str
     on conflict (guest_id,photo_id) do update set delete_after=excluded.delete_after`, [guest, photo, reserve]);
 }
 
-export async function cleanPhotoFiles(currentGuest: string) {
+export async function cleanPhotoFiles(currentGuest?: string, limit = 12) {
   try {
-    if (!photoStorageAvailable()) return;
-    const files = await transact(false, query => query<{ guest_id: string; photo_id: string }>(`select guest_id, photo_id
-      from guest_photo_cleanup q where delete_after<=now()
-      and not exists (select 1 from guest g where g.id=q.guest_id and g.photo_id=q.photo_id)
-      order by (guest_id=$1) desc, delete_after limit 12`, [currentGuest]));
-    if (!files.length) return;
+    const files = await transact(true, async query => {
+      const due = await query<{ guest_id: string; photo_id: string }>(`select guest_id,photo_id
+        from guest_photo_cleanup q where delete_after<=now()
+        and not exists (select 1 from guest g where g.id=q.guest_id and g.photo_id=q.photo_id)
+        and (q.deleting or (not exists (select 1 from report r where r.target=q.guest_id and r.photo_id=q.photo_id
+          and r.review_status='pending' and r.created_at>now()-interval '90 days')
+        and not exists (select 1 from guest_photo_view v where v.owner=q.guest_id and v.photo_id=q.photo_id and v.expires_at>now())))
+        order by (guest_id=$1) desc, delete_after limit $2`, [currentGuest ?? null, limit]);
+      if (!due.length) return due;
+      if (!photoStorageAvailable()) throw new Error('Photo cleanup requires Storage configuration.');
+      await query(`update guest_photo_cleanup set deleting=true, delete_after=now()+interval '1 minute'
+        where (guest_id,photo_id) in (select * from unnest($1::uuid[],$2::uuid[]))`,
+      [due.map(file => file.guest_id), due.map(file => file.photo_id)]);
+      return due;
+    });
+    if (!files.length) return 0;
     if (localPhotoStorage()) {
       await Promise.all(files.map(file => rm(localFile(file.guest_id, file.photo_id), { force: true })));
     } else {
@@ -112,7 +128,9 @@ export async function cleanPhotoFiles(currentGuest: string) {
       await query(`delete from guest_photo_cleanup where (guest_id,photo_id) in
         (select * from unnest($1::uuid[],$2::uuid[]))`, [files.map(file => file.guest_id), files.map(file => file.photo_id)]);
     });
+    return files.length;
   } catch {
-    console.error('Profile photo file cleanup will retry on a later photo change.');
+    console.error('Profile photo file cleanup failed. The queued objects can be retried.');
+    return null;
   }
 }

@@ -13,7 +13,7 @@ const actions = [
   },
   {
     id: 'delete-data', label: 'Delete my data', confirm: 'Confirm deletion',
-    explanation: 'This ends your session, closes your chats, and removes your profile details, photo, messages you sent, meetup invites, and Say Hi records. Reports, messages needed for a pending report, and limited safety records may be kept for moderation.',
+    explanation: 'This ends your session, closes your chats, and removes your profile details, displayed photo, messages you sent, meetup invites, and Say Hi records. Reports, relevant messages, meetup invites and photo versions needed for pending cases, and limited safety records may be kept for moderation.',
     success: 'Your data deletion request was processed.',
   },
 ] as const;
@@ -49,8 +49,9 @@ export function GuestPrivacy({ canManage, busy, submit }: {
       <details className="faq-row privacy-retention">
         <summary>How long is my data kept?<ChevronDown className="faq-toggle" size={17} aria-hidden="true" /></summary>
         <div className="privacy-retention-copy">
-          <p>The policy calls for removing closed-chat messages and meetup invites after 30 days. Messages needed for a pending report and reports themselves may be kept for up to 90 days. Basic closed-chat records may be kept for safety.</p>
-          <p>Open saved matches can be accessed while your guest session is still valid in this browser. The operator needs to schedule the daily cleanup job for these time limits to take effect.</p>
+          <p>The policy removes ordinary closed-chat messages and meetup invites after 30 days. Pending reports can preserve relevant messages and invites for up to 90 days after the chat closes. Reports and reported photos can be kept for up to 90 days after the report. Photo evidence is available to moderators while its case is pending. Basic closed-chat records may be kept for safety.</p>
+          <p>A recently viewed profile photo may be held for 15 minutes after it was shown, so it can still be reported if the guest replaces or removes it.</p>
+          <p>Open saved matches stay with your guest session. A suspension pauses messaging and meetup invites until access is restored. The operator needs to schedule the daily cleanup job for these time limits to take effect.</p>
         </div>
       </details>
       <section aria-labelledby="privacy-manage">

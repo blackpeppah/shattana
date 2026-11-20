@@ -5,8 +5,9 @@ import { photoMaxBytes, photoSide, photoTargetBytes } from './photo-options';
 
 export type PhotoSettings = { photoId: string | null; quickPhoto: boolean };
 
-export function PhotoAvatar({ nickname, photoId, scope, target, large = false }: {
+export function PhotoAvatar({ nickname, photoId, scope, target, large = false, onPhotoShown }: {
   nickname: string; photoId?: string | null; scope: 'own' | 'bar' | 'quick'; target?: string; large?: boolean;
+  onPhotoShown?: (photoId: string) => void;
 }) {
   const query = photoId ? new URLSearchParams({ scope, revision: photoId, ...(target ? { target } : {}) }).toString() : '';
   const [image, setImage] = useState<{ query: string; url: string; loaded: boolean }>();
@@ -25,8 +26,11 @@ export function PhotoAvatar({ nickname, photoId, scope, target, large = false }:
   const current = query && image?.query === query ? image : undefined;
   return <span className={`avatar photo-avatar${large ? ' photo-avatar-large' : ''}`} aria-hidden="true">
     {Array.from(nickname.trim())[0]?.toUpperCase() || '?'}
-    {current && <img src={current.url} alt="" className={current.loaded ? 'loaded' : undefined} referrerPolicy="no-referrer"
-      onLoad={() => setImage(previous => previous?.url === current.url ? { ...previous, loaded: true } : previous)}
+    {current && <img key={current.url} src={current.url} alt="" className={current.loaded ? 'loaded' : undefined} referrerPolicy="no-referrer"
+      onLoad={() => {
+        setImage(previous => previous?.url === current.url ? { ...previous, loaded: true } : previous);
+        if (photoId) onPhotoShown?.(photoId);
+      }}
       onError={() => setImage(previous => previous?.url === current.url ? undefined : previous)} />}
   </span>;
 }

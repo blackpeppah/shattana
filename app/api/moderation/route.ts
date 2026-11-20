@@ -1,11 +1,9 @@
 import { NextRequest } from 'next/server';
 import { transact } from '../../../db/store';
-import { moderationDenied, moderationReply as respond, setGuestSuspension } from './access';
+import { moderationDenied, moderationReply as respond, reportId, setGuestSuspension } from './access';
 
 const statuses = ['pending', 'reviewed', 'dismissed'];
 const pageSize = 25;
-const reportId = (id: unknown): id is string => typeof id === 'string' && /^[1-9]\d{0,18}$/.test(id) &&
-  BigInt(id) <= BigInt('9223372036854775807');
 
 async function handle(req: NextRequest, write: boolean) {
   const denied = moderationDenied(req, write);
@@ -55,7 +53,9 @@ async function handle(req: NextRequest, write: boolean) {
       }
       const evidence = showEvidence ? await query(`select * from (
         select m.id::text, m.sender=r.target as "reportedGuest", m.body from report r join message m on m.chat_id=r.chat_id
-        where r.id=$1 and (m.created_at is null or m.created_at<=r.created_at) order by m.id desc limit 20
+        join chat c on c.id=r.chat_id where r.id=$1 and r.created_at>now()-interval '90 days'
+        and (not c.closed or coalesce(c.ended_at,c.created_at)>now()-interval '90 days')
+        and (m.created_at is null or m.created_at<=r.created_at) order by m.id desc limit 20
       ) recent order by id::bigint`, [selected]) : [];
       return respond({ reports, evidence, counts, page, pages });
     });

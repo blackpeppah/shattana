@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { transact, type Query } from '../../../db/store';
 import { photoMaxBytes, photoSide, photoTargetBytes } from '../../photo-options';
-import { barCardEligibility, browserCookie, browserSuspended, guestCookie, sameGuestOrigin, uuid } from '../chat/access';
+import { barCardEligibility, browserCookie, browserSuspended, guestCookie, guestSuspended, sameGuestOrigin, uuid } from '../chat/access';
 import { allowAttempt } from '../safety';
 import { cleanPhotoFiles, localPhotoStorage, photoStorageAvailable, queuePhotoDeletion, readLocalPhoto,
   signedLocalPhotoURL, signedPhotoURL, storePhoto } from './storage';
@@ -22,13 +22,13 @@ async function viewerPhoto(query: Query, viewer: string, browser: string | undef
   if (!guest || (guest.browser_ready && await browserSuspended(query, browser, guest.browser_id))) return;
   if (scope === 'own') return guest.photo_id === revision ? viewer : undefined;
   if (scope === 'bar') {
-    const [peer] = await query<{ id: string }>(`select g.id ${barCardEligibility} and g.id=$2 and g.photo_id=$3`,
+    const [peer] = await query<{ id: string }>(`select g.id ${barCardEligibility(guest.browser_ready === true)} and g.id=$2 and g.photo_id=$3`,
       [viewer, target, revision]);
     return peer?.id;
   }
   const [peer] = await query<{ id: string }>(`select g.id from chat c join guest g on g.id=case when c.a=$1 then c.b else c.a end
     where c.id=$2 and (c.a=$1 or c.b=$1) and not c.closed and not c.matched
-    and g.suspended_at is null and g.session_ended_at is null and g.deleted_at is null
+    and not ${guestSuspended('g', guest.browser_ready === true)} and g.session_ended_at is null and g.deleted_at is null
     and g.seen_at>now()-interval '90 seconds' and g.quick_photo and g.photo_id=$3
     and not exists (select 1 from block where (actor=$1 and target=g.id) or (actor=g.id and target=$1))`,
   [viewer, target, revision]);
@@ -45,18 +45,28 @@ export async function GET(req: NextRequest) {
   if (!photoStorageAvailable() || !uuid(viewer) || !uuid(revision) ||
     !(scope === 'own' || ((scope === 'bar' || scope === 'quick') && uuid(target)))) return missing();
 
-  const authorizedPhoto = () => transact(false, query => viewerPhoto(query, viewer, browser, scope, target, revision));
+  const authorizedPhoto = (remember = false) => transact(remember && scope === 'bar', async query => {
+    const owner = await viewerPhoto(query, viewer, browser, scope, target, revision);
+    if (owner && remember && scope === 'bar') {
+      const [schema] = await query("select to_regclass('guest_photo_view') is not null as ready");
+      if (schema.ready) await query(`insert into guest_photo_view(viewer,owner,photo_id,expires_at)
+        values($1,$2,$3,now()+interval '15 minutes')
+        on conflict (viewer,owner,photo_id) do update set expires_at=excluded.expires_at`, [viewer, owner, revision]);
+    }
+    return owner;
+  });
   try {
-    const owner = await authorizedPhoto();
+    const local = localPhotoStorage();
+    const owner = await authorizedPhoto(local && !params.has('token'));
     if (!owner) return missing();
     if (params.has('token')) {
-      if (!localPhotoStorage()) return missing();
+      if (!local) return missing();
       const bytes = await readLocalPhoto(viewer, owner, revision, params);
       return bytes ? new NextResponse(bytes, { headers: { ...headers, 'Content-Type': 'image/webp' } }) : missing();
     }
-    if (localPhotoStorage()) return reply({ url: signedLocalPhotoURL(viewer, params) });
+    if (local) return reply({ url: signedLocalPhotoURL(viewer, params) });
     const url = await signedPhotoURL(owner, revision);
-    return await authorizedPhoto() === owner ? reply({ url }) : missing();
+    return await authorizedPhoto(true) === owner ? reply({ url }) : missing();
   } catch {
     return missing();
   }
@@ -108,6 +118,7 @@ async function update(req: NextRequest) {
   }
 
   let reserved: string | undefined;
+  let fileStored = false;
   let cleanup = false;
   const availableGuest = async (query: Query) => {
     const [guest] = await query<{ photo_id: string | null; quick_photo: boolean; browser_id: string | null; browser_ready: boolean }>(
@@ -154,6 +165,7 @@ async function update(req: NextRequest) {
     const next = reserved;
     await transact(true, query => queuePhotoDeletion(query, viewer, next, true));
     await storePhoto(viewer, next, photo);
+    fileStored = true;
     const result = await transact(true, async query => {
       if (!await availableGuest(query)) return changed();
       const [guest] = await query(`update guest set photo_id=$3 where ${photoGuest}
@@ -168,8 +180,8 @@ async function update(req: NextRequest) {
   } catch {
     return unavailable();
   } finally {
-    if (reserved) {
-      // A successful publish removes the reservation in the same transaction.
+    if (reserved && fileStored) {
+      // An unconfirmed upload keeps its original reservation in case Storage finishes late.
       await transact(true, async query => {
         await query('update guest_photo_cleanup set delete_after=now() where guest_id=$1 and photo_id=$2', [viewer, reserved]);
       }).catch(() => {});

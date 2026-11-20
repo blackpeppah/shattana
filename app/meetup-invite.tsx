@@ -1,11 +1,11 @@
-import type { FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { bacolodDate, formatMeetupDate } from './after-hours';
 
 export type MeetupInvite = {
   version: string;
   venue: string;
   date: string;
-  status: 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'expired';
+  status: 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'expired' | 'canceled' | 'ended';
   time?: string | null;
   mine: boolean;
 };
@@ -52,14 +52,16 @@ export function MeetupEditor({ draft, venues, extended, busy, cancel, submit }: 
   </form>;
 }
 
-export function MeetupCard({ invite, nickname, busy, counter, respond, withdraw }: {
+export function MeetupCard({ invite, nickname, busy, counter, respond, withdraw, cancelPlan }: {
   invite: MeetupInvite;
   nickname: string;
   busy: boolean;
   counter: () => void;
   respond: (response: 'accept' | 'decline') => void;
   withdraw?: () => void;
+  cancelPlan?: () => Promise<boolean>;
 }) {
+  const [confirming, setConfirming] = useState(false);
   return <aside className="meetup-card" aria-label="Meetup invite">
     <strong>G ta?</strong>
     <p>{invite.mine ? 'You suggested' : `${nickname} suggested`} {invite.venue}.</p>
@@ -68,6 +70,15 @@ export function MeetupCard({ invite, nickname, busy, counter, respond, withdraw 
     {invite.status === 'declined' && <p className="meetup-status">Maybe later</p>}
     {invite.status === 'withdrawn' && <p className="meetup-status">Invite withdrawn</p>}
     {invite.status === 'expired' && <p className="meetup-status">Invite expired</p>}
+    {invite.status === 'canceled' && <p className="meetup-status" role="status">Plan canceled</p>}
+    {invite.status === 'ended' && <p className="meetup-status">Ended</p>}
+    {invite.status === 'accepted' && cancelPlan && (confirming ? <div>
+      <p>Cancel this plan for both of you?</p>
+      <div className="meetup-buttons">
+        <button className="secondary" disabled={busy} onClick={() => setConfirming(false)}>Keep plan</button>
+        <button className="primary" disabled={busy} onClick={async () => { if (await cancelPlan()) setConfirming(false); }}>Confirm cancellation</button>
+      </div>
+    </div> : <div className="meetup-buttons"><button className="secondary" disabled={busy} onClick={() => setConfirming(true)}>Cancel plan</button></div>)}
     {invite.status === 'pending' && invite.mine && <>
       <p className="meetup-status">Waiting for a reply</p>
       {withdraw && <div className="meetup-buttons"><button className="secondary" disabled={busy} onClick={withdraw}>Withdraw invite</button></div>}

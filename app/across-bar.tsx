@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react';
+import { useRef, type FormEvent } from 'react';
 import { Flag, Heart, MapPin, Shuffle } from 'lucide-react';
 import { genders, barInterests, barPrompt, barReportReasons } from './options';
 import { PhotoAvatar, PhotoEditor, type PhotoSettings } from './profile-photo';
@@ -58,17 +58,21 @@ export function BarCard({ candidate, animate, busy, report, setReport, act }: {
   act: (action: string, fields?: Record<string, unknown>) => Promise<boolean>;
 }) {
   const target = candidate.id;
+  const shownPhoto = useRef<{ target: string; photoId: string }>(undefined);
   return <>
     <div className={`bar-card-profile${animate ? ' motion-rise' : ''}`} key={target}>
     <div className="chat-head">
-      <PhotoAvatar nickname={candidate.nickname} scope="bar" target={target} photoId={candidate.photoId} large />
+      <PhotoAvatar nickname={candidate.nickname} scope="bar" target={target} photoId={candidate.photoId} large
+        onPhotoShown={photoId => { shownPhoto.current = { target, photoId }; }} />
       <div className="peer"><h3>{candidate.nickname}</h3><p className="candidate-spot"><MapPin size={14} /> {candidate.favorite}</p></div>
       <button className="icon-button" aria-label="Report or block profile" aria-expanded={report} onClick={() => setReport(!report)}><Flag size={18} /></button>
     </div>
     <div className="bar-answer"><p>{barPrompt}</p><blockquote>{candidate.answer}</blockquote></div>
     </div>
     {report && <div className="report"><strong>Report or block this profile</strong><div className="pills">
-      {barReportReasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('bar-report', { target, reason })}>{reason}</button>)}
+      {barReportReasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('bar-report', {
+        target, reason, photoId: reason === 'Fake or stolen photo' && shownPhoto.current?.target === target ? shownPhoto.current.photoId : undefined,
+      })}>{reason}</button>)}
       <button disabled={busy} onClick={() => void act('bar-block', { target })}>Block</button>
     </div></div>}
     <div className="actions">

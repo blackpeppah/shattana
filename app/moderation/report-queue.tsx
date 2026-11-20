@@ -2,6 +2,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+function PhotoEvidence({ report, pending }: { report: string; pending: boolean }) {
+  const [unavailable, setUnavailable] = useState(false);
+  return <div className="admin-photo-evidence">
+    <h3>Reported photo</h3>
+    {pending && !unavailable
+      ? <img src={`/api/moderation/photo?report=${encodeURIComponent(report)}`} alt="Photo shown when this guest was reported"
+        onError={() => setUnavailable(true)} />
+      : <p>Photo evidence unavailable</p>}
+  </div>;
+}
+
 const filters = { pending: 'Pending', reviewed: 'Reviewed', dismissed: 'Dismissed' } as const;
 type Status = keyof typeof filters;
 type Report = {
@@ -137,6 +148,7 @@ export function ReportQueue() {
                     </li>)}
                   </ul>
                 </> : <p>{report.hasConversation ? 'No messages are available for this report.' : 'This report was sent from a profile, so it has no conversation attached.'}</p>}
+                {report.reason === 'Fake or stolen photo' && <PhotoEvidence key={report.id} report={report.id} pending={status === 'pending'} />}
                 <h3>Review outcome</h3>
                 {report.reviewedAt && <p>{filters[status]} on <time dateTime={report.reviewedAt}>{localTime.format(new Date(report.reviewedAt))}</time> · Bacolod time</p>}
                 <p>{status === 'pending'
@@ -151,7 +163,7 @@ export function ReportQueue() {
                   </> : <button className="secondary" disabled={busy} onClick={() => resolve(report.id, 'pending')}>Reopen report</button>}
                 </div>
                 {confirmSuspension && <div className="admin-report-confirm">
-                  <p>Suspending this guest closes their open conversations and stops access to Shattana. The report stays in Pending.</p>
+                  <p>Suspending this guest ends their active Quick Chats and pauses their saved matches. The report stays in Pending.</p>
                   <div className="admin-row-actions">
                     <button className="primary" disabled={busy} onClick={() => void load(status, page, report.id, { id: report.id, status, suspend: true })}>Confirm suspension</button>
                     <button className="secondary" disabled={busy} onClick={() => setConfirmSuspension(false)}>Cancel</button>

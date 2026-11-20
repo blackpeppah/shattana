@@ -18,10 +18,15 @@ export async function browserSuspended(query: Query, ...ids: unknown[]) {
   return Boolean(blocked);
 }
 
-export const barEligibility = `
+export function guestSuspended(alias: 'g', browserReady: boolean) {
+  return `(to_jsonb(${alias})->>'suspended_at' is not null${browserReady ? ` or exists (
+    select 1 from guest restricted where restricted.browser_id=${alias}.browser_id and restricted.suspended_at is not null)` : ''})`;
+}
+
+export const barEligibility = (browserReady: boolean) => `
   from guest g join guest me on me.id=$1
   where g.id<>me.id and g.bar_answer is not null and me.bar_answer is not null
-  and to_jsonb(g)->>'session_ended_at' is null and to_jsonb(g)->>'suspended_at' is null
+  and to_jsonb(g)->>'session_ended_at' is null and not ${guestSuspended('g', browserReady)}
   and g.bar_age between me.bar_min_age and me.bar_max_age
   and me.bar_age between g.bar_min_age and g.bar_max_age
   and (me.bar_interest='Everyone' or me.bar_interest=g.bar_gender)
@@ -31,5 +36,5 @@ export const barEligibility = `
     and greatest(a,b)=greatest(me.id,g.id))
 `;
 
-export const barCardEligibility = `${barEligibility}
+export const barCardEligibility = (browserReady: boolean) => `${barEligibility(browserReady)}
   and not exists (select 1 from bar_hi where sender=me.id and recipient=g.id)`;
