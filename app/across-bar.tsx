@@ -1,15 +1,18 @@
 import type { FormEvent } from 'react';
 import { Flag, Heart, MapPin, Shuffle } from 'lucide-react';
-import { genders, barInterests, barPrompt, reasons } from './options';
+import { genders, barInterests, barPrompt, barReportReasons } from './options';
+import { PhotoAvatar, PhotoEditor, type PhotoSettings } from './profile-photo';
 
 export type BarProfile = {
   age: number | null; gender: string | null; interest: string | null;
   minAge: number | null; maxAge: number | null; favorite: string | null; answer: string | null;
+  photoId?: string | null; quickPhoto?: boolean;
 };
-export type BarCandidate = { id: string; nickname: string; favorite: string; answer: string };
+export type BarCandidate = { id: string; nickname: string; favorite: string; answer: string; photoId?: string | null };
 
-export function BarSetup({ profile, busy, save }: {
-  profile: BarProfile; busy: boolean; save: (fields: Record<string, unknown>) => void;
+export function BarSetup({ profile, busy, save, photosReady, updatePhoto }: {
+  profile: BarProfile & { nickname: string }; busy: boolean; save: (fields: Record<string, unknown>) => void;
+  photosReady: boolean; updatePhoto: (photo: PhotoSettings) => void;
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,9 +25,10 @@ export function BarSetup({ profile, busy, save }: {
   }
 
   return <form onSubmit={submit}>
-    <div className="card-head"><h2>Across the Bar</h2><p>Only your nickname, hangout, and answer appear on your card.</p></div>
+    <div className="card-head"><h2>Across the Bar</h2><p>Your card shows your nickname, hangout, answer, and optional photo.</p></div>
     <fieldset className="fields">
       <legend>Your card</legend>
+      {photosReady && <PhotoEditor nickname={profile.nickname} settings={{ photoId: profile.photoId ?? null, quickPhoto: Boolean(profile.quickPhoto) }} update={updatePhoto} />}
       <div className="field-pair">
         <label>Your age<input name="age" type="number" min={18} max={120} required defaultValue={profile.age ?? ''} /></label>
         <label>Your gender<select name="gender" required defaultValue={profile.gender ?? ''}>
@@ -57,14 +61,14 @@ export function BarCard({ candidate, animate, busy, report, setReport, act }: {
   return <>
     <div className={`bar-card-profile${animate ? ' motion-rise' : ''}`} key={target}>
     <div className="chat-head">
-      <div className="avatar" aria-hidden="true">{Array.from(candidate.nickname)[0]}</div>
+      <PhotoAvatar nickname={candidate.nickname} scope="bar" target={target} photoId={candidate.photoId} large />
       <div className="peer"><h3>{candidate.nickname}</h3><p className="candidate-spot"><MapPin size={14} /> {candidate.favorite}</p></div>
       <button className="icon-button" aria-label="Report or block profile" aria-expanded={report} onClick={() => setReport(!report)}><Flag size={18} /></button>
     </div>
     <div className="bar-answer"><p>{barPrompt}</p><blockquote>{candidate.answer}</blockquote></div>
     </div>
     {report && <div className="report"><strong>Report or block this profile</strong><div className="pills">
-      {reasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('bar-report', { target, reason })}>{reason}</button>)}
+      {barReportReasons.map(reason => <button key={reason} disabled={busy} onClick={() => void act('bar-report', { target, reason })}>{reason}</button>)}
       <button disabled={busy} onClick={() => void act('bar-block', { target })}>Block</button>
     </div></div>}
     <div className="actions">

@@ -1,6 +1,7 @@
 node_modules/
 .next/
 .shattana-db/
+.shattana-photos/
 .env*
 !.env.example
 *.tsbuildinfo

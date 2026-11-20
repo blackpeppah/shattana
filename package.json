@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "next build && node --test tests/smoke.test.cjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
@@ -19,7 +19,8 @@
     "next": "^16.4.6",
     "pg": "^8.23.1",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

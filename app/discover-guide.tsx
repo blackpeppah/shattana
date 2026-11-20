@@ -1,4 +1,5 @@
 import { ChevronDown, Clock, Heart, Shuffle } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 const modes = [
   ['Quick Chat', 'Get paired at random for a one-on-one text chat. Same round or same spot? That’s your opener.', Shuffle],
@@ -13,7 +14,7 @@ const questions = [
   ['How do I block or report someone?', 'In a conversation, open Chat menu. You can block the guest or choose a report reason. Either action ends the chat.'],
 ];
 
-export function DiscoverGuide() {
+export function DiscoverGuide({ afterFaq }: { afterFaq?: ReactNode }) {
   return <div className="discover-guide">
     <section aria-labelledby="how-it-works">
       <h2 id="how-it-works">How Shattana works</h2>
@@ -24,14 +25,17 @@ export function DiscoverGuide() {
         </div>)}
       </dl>
     </section>
-    <section className="guide-faq" aria-labelledby="discover-faq">
-      <h2 id="discover-faq">FAQ</h2>
-      <div className="faq-rows">
-        {questions.map(([question, answer]) => <details key={question} className="faq-row">
-          <summary>{question}<ChevronDown className="faq-toggle" size={17} aria-hidden="true" /></summary>
-          <p>{answer}</p>
-        </details>)}
-      </div>
-    </section>
+    <div className="guide-faq">
+      <section aria-labelledby="discover-faq">
+        <h2 id="discover-faq">FAQ</h2>
+        <div className="faq-rows">
+          {questions.map(([question, answer]) => <details key={question} className="faq-row">
+            <summary>{question}<ChevronDown className="faq-toggle" size={17} aria-hidden="true" /></summary>
+            <p>{answer}</p>
+          </details>)}
+        </div>
+      </section>
+      {afterFaq}
+    </div>
   </div>;
 }

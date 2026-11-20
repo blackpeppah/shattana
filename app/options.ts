@@ -1,6 +1,7 @@
 export const drinks = ['CLVB', 'Tower', 'Beer', 'Etc.'];
 export const spots = ['Petals', 'Akasya', 'La Jefa', 'Lunar', 'Club K', 'D Cloud', 'Ninabs', 'Aces'];
 export const reasons = ['Harassment', 'Underage user', 'Spam', 'Other'];
+export const barReportReasons = [...reasons.slice(0, -1), 'Fake or stolen photo', 'Other'];
 export const joinChallengeAction = 'guest_join';
 export const genders = ['Woman', 'Man', 'Nonbinary', 'Another identity'];
 export const barInterests = ['Everyone', ...genders];

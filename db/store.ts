@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-type Query = <T extends Record<string, unknown> = Record<string, unknown>>(sql: string, args?: unknown[]) => Promise<T[]>;
+export type Query = <T extends Record<string, unknown> = Record<string, unknown>>(sql: string, args?: unknown[]) => Promise<T[]>;
 const runtime = globalThis as typeof globalThis & {
   shattanaPool?: Pool;
   shattanaLocal?: Promise<PGlite>;

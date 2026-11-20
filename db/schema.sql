@@ -54,6 +54,23 @@ create table if not exists message (
 alter table message add column if not exists created_at timestamptz;
 alter table message alter column created_at set default now();
 create index if not exists message_chat on message(chat_id,id);
+alter table chat add column if not exists a_read_through bigint;
+alter table chat add column if not exists b_read_through bigint;
+update chat c set
+  a_read_through=coalesce(a_read_through, (select max(m.id) from message m where m.chat_id=c.id and m.sender=c.b and c.matched), 0),
+  b_read_through=coalesce(b_read_through, (select max(m.id) from message m where m.chat_id=c.id and m.sender=c.a and c.matched), 0)
+where a_read_through is null or b_read_through is null;
+alter table chat alter column a_read_through set default 0, alter column a_read_through set not null;
+alter table chat alter column b_read_through set default 0, alter column b_read_through set not null;
+create table if not exists meetup_invite (
+  chat_id uuid primary key references chat,
+  version uuid not null,
+  proposer uuid not null references guest,
+  venue text not null,
+  meetup_date date not null,
+  status text not null check (status in ('pending','accepted','declined')),
+  updated_at timestamptz not null default now()
+);
 create table if not exists block (
   actor uuid references guest,
   target uuid references guest,
@@ -76,3 +93,56 @@ alter table message enable row level security;
 alter table block enable row level security;
 alter table report enable row level security;
 alter table bar_hi enable row level security;
+alter table meetup_invite enable row level security;
+
+alter table guest add column if not exists session_ended_at timestamptz;
+alter table guest add column if not exists suspended_at timestamptz;
+alter table guest add column if not exists deleted_at timestamptz;
+alter table report add column if not exists review_status text not null default 'pending'
+  check (review_status in ('pending','reviewed','dismissed'));
+alter table report add column if not exists reviewed_at timestamptz;
+create table if not exists guest_rate_limit (
+  scope text not null,
+  subject text not null,
+  bucket bigint not null,
+  hits integer not null default 1,
+  expires_at timestamptz not null,
+  primary key(scope,subject,bucket)
+);
+alter table guest_rate_limit enable row level security;
+
+alter table message add column if not exists client_nonce uuid;
+create unique index if not exists message_retry_key on message(chat_id,sender,client_nonce) where client_nonce is not null;
+alter table meetup_invite add column if not exists meetup_time time;
+alter table meetup_invite add column if not exists withdrawn_at timestamptz;
+
+-- Seed the original venues only when the table is first created.
+do $$
+begin
+  if to_regclass('public.venue') is null then
+    create table public.venue (
+      id integer generated always as identity primary key,
+      name text not null check (char_length(btrim(name)) between 1 and 60)
+    );
+    create unique index venue_name_unique on public.venue (lower(name));
+    insert into public.venue(name) values
+      ('Petals'), ('Akasya'), ('La Jefa'), ('Lunar'), ('Club K'), ('D Cloud'), ('Ninabs'), ('Aces');
+  end if;
+end $$;
+alter table public.venue enable row level security;
+
+-- Optional profile photos. Image files live outside Postgres.
+alter table guest add column if not exists photo_id uuid;
+alter table guest add column if not exists quick_photo boolean not null default false;
+create table if not exists guest_photo_cleanup (
+  guest_id uuid not null references guest(id),
+  photo_id uuid not null,
+  delete_after timestamptz not null default now(),
+  primary key (guest_id, photo_id)
+);
+alter table guest_photo_cleanup enable row level security;
+create index if not exists guest_photo_cleanup_due on guest_photo_cleanup (delete_after);
+
+-- Keep browser suspension separate from the cookie that grants access to a guest session.
+alter table guest add column if not exists browser_id uuid;
+create index if not exists guest_suspended_browser on guest(browser_id) where suspended_at is not null;
