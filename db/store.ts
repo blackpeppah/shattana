@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { Pool } from 'pg';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { supabaseProductionCa } from './supabase-ca';
 
 export type Query = <T extends Record<string, unknown> = Record<string, unknown>>(sql: string, args?: unknown[]) => Promise<T[]>;
 const runtime = globalThis as typeof globalThis & {
@@ -32,9 +33,9 @@ async function localDatabase() {
 
 function createPool(connectionString: string) {
   const url = new URL(connectionString);
-  const ca = process.env.DATABASE_CA_CERT?.trim().replace(/\\n/g, '\n');
   const supabase = url.hostname.endsWith('.supabase.co') || url.hostname.endsWith('.pooler.supabase.com');
-  if (supabase || ca) {
+  const ca = process.env.DATABASE_CA_CERT?.trim().replace(/\\n/g, '\n') || (supabase ? supabaseProductionCa : undefined);
+  if (ca) {
     // pg lets URL SSL parameters override the supplied TLS options.
     for (const option of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'ssl', 'uselibpqcompat']) url.searchParams.delete(option);
   }
@@ -42,7 +43,7 @@ function createPool(connectionString: string) {
     connectionString: url.href,
     max: 2,
     connectionTimeoutMillis: 5000,
-    ssl: supabase || ca ? { rejectUnauthorized: true, ...(ca ? { ca } : {}) } : undefined,
+    ssl: ca ? { rejectUnauthorized: true, ca } : undefined,
   });
 }
 

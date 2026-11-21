@@ -25,7 +25,7 @@ For phone testing on the same network, set `SHATTANA_DEV_HOST` in `.env.developm
 ## Deploy a free-tier prototype
 
 1. Create a Supabase Free project and run [db/schema.sql](db/schema.sql) in its SQL Editor.
-2. Import this Next.js project into Vercel Hobby for personal, non-commercial use. Set the server-side `DATABASE_URL` to the Supabase transaction pooler connection string. Paste the downloaded Supabase CA PEM into `DATABASE_CA_CERT` if the certificate chain requires it. Shattana verifies the TLS certificate and hostname. The route needs a role that owns the tables or bypasses RLS. Keep the connection string out of source control.
+2. Import this Next.js project into Vercel Hobby for personal, non-commercial use. Set the server-side `DATABASE_URL` to the Supabase transaction pooler connection string. Shattana verifies the certificate and hostname using the bundled [Supabase production CA](https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt). Set `DATABASE_CA_CERT` to a PEM certificate if your database uses a different authority. The route needs a role that owns the tables or bypasses RLS. Keep the connection string out of source control.
 3. Deploy and use the assigned `.vercel.app` address. The availability of `shattana.vercel.app` depends on Vercel.
 4. Repeat the two-browser test against that deployment.
 
