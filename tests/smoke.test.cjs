@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { randomBytes, randomUUID, scryptSync } = require('node:crypto');
 const { spawn } = require('node:child_process');
+const { request } = require('node:http');
 const { createServer } = require('node:net');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -104,6 +105,8 @@ before(async () => {
   env.MODERATION_USERNAME = moderatorUsername;
   env.MODERATION_PASSWORD_HASH = salt.toString('hex') + ':' + scryptSync(moderatorPassword, salt, 64).toString('hex');
   env.MODERATION_SESSION_SECRET = moderatorSecret;
+  env.MODERATION_HOST = 'vercel-branch';
+  env.VERCEL_BRANCH_URL = '127.0.0.1';
   env.RETENTION_SECRET = retentionSecret;
   const port = await availablePort();
   base = `http://127.0.0.1:${port}`;
@@ -398,10 +401,11 @@ test('Discover alerts skip the initial unread baseline and deduplicate incoming 
   assert.equal(update(reading.seen, '13').alert.messageId, '13');
 });
 
-test('admin sign-in protects the report queue and sign-out clears the browser session', async () => {
+test('admin routes stay on the configured host and require a moderator session', async () => {
   const queue = base + '/moderation';
   const api = base + '/api/moderation';
   const session = api + '/session';
+  assert.equal((await fetch(base + '/admin')).status, 200);
   const anonymous = await fetch(queue, { redirect: 'manual' });
   assert.equal(anonymous.status, 307);
   assert.equal(anonymous.headers.get('location'), '/admin');
@@ -422,6 +426,27 @@ test('admin sign-in protects the report queue and sign-out clears the browser se
   assert.match(saved, /SameSite=strict/i);
   assert.ok(!saved.includes(moderatorPassword));
   const cookie = saved.split(';')[0];
+  const requestPublicHost = (route, method = 'GET') => new Promise((resolve, reject) => {
+    // Node's fetch replaces a caller-supplied Host with the hostname in the URL.
+    const req = request(base + route, { method, headers: { host: 'public.example', 'x-forwarded-host': '127.0.0.1', cookie } }, response => {
+      response.on('end', () => resolve(response));
+      response.on('error', reject);
+      response.resume();
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal((await requestPublicHost('/')).statusCode, 200);
+  for (const route of ['/admin', '/moderation', '/api/moderation', '/api/moderation/dashboard', '/api/moderation/photo']) {
+    const response = await requestPublicHost(route);
+    assert.equal(response.statusCode, 404, route);
+    assert.equal(response.headers.location, undefined, route);
+  }
+  for (const method of ['POST', 'DELETE']) {
+    const response = await requestPublicHost('/api/moderation/session', method);
+    assert.equal(response.statusCode, 404, method);
+    assert.equal(response.headers['set-cookie'], undefined, method);
+  }
   assert.equal((await fetch(queue, { headers: { cookie }, redirect: 'manual' })).status, 200);
   const reports = await fetch(api, { headers: { cookie } });
   assert.equal(reports.status, 200);

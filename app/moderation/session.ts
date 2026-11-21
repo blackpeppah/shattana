@@ -31,6 +31,13 @@ export async function verifyModeratorPassword(
   return matchesSecret(username.trim(), credentials.username) && validPassword;
 }
 
+export function moderationHostAllowed(host: string | null) {
+  const configured = process.env.MODERATION_HOST?.trim().toLowerCase();
+  if (!configured) return true;
+  const allowed = configured === 'vercel-branch' ? process.env.VERCEL_BRANCH_URL?.trim().toLowerCase() : configured;
+  return Boolean(allowed) && host?.toLowerCase().replace(/:\d+$/, '') === allowed;
+}
+
 export function moderatorHttps(req: NextRequest) {
   return req.nextUrl.protocol === 'https:' ||
     Boolean(process.env.VERCEL && req.headers.get('x-forwarded-proto') === 'https');

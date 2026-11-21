@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Query } from '../../../db/store';
-import { moderatorCookie, moderatorCredentials, moderatorSameOrigin, moderatorTransport,
+import { moderationHostAllowed, moderatorCookie, moderatorCredentials, moderatorSameOrigin, moderatorTransport,
   validModeratorSession } from '../../moderation/session';
 
 export const moderationReply = (body: object, status = 200) =>
@@ -10,6 +10,7 @@ export const reportId = (id: unknown): id is string => typeof id === 'string' &&
   BigInt(id) <= BigInt('9223372036854775807');
 
 export function moderationDenied(req: NextRequest, write: boolean) {
+  if (!moderationHostAllowed(req.headers.get('host'))) return moderationReply({ error: 'Not found.' }, 404);
   const credentials = moderatorCredentials();
   if (!credentials) return moderationReply({ error: 'Moderation is unavailable.' }, 404);
   if (!moderatorTransport(req)) return moderationReply({ error: 'Use HTTPS to access moderation.' }, 403);

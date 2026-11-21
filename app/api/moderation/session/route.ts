@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { issueModeratorSession, moderatorCookie, moderatorCookieOptions, moderatorSameOrigin,
-  moderatorCredentials, moderatorTransport, verifyModeratorPassword } from '../../../moderation/session';
+  moderationHostAllowed, moderatorCredentials, moderatorTransport, verifyModeratorPassword } from '../../../moderation/session';
+import { moderationReply as reply } from '../access';
 import { transact } from '../../../../db/store';
 import { allowAttempt, connectionSubject } from '../../safety';
 
-const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
-
 function invalidRequest(req: NextRequest) {
+  if (!moderationHostAllowed(req.headers.get('host'))) return reply({ error: 'Not found.' }, 404);
   if (!moderatorTransport(req)) return reply({ error: 'Use HTTPS to access moderation.' }, 403);
   if (!moderatorSameOrigin(req)) return reply({ error: 'Invalid request origin.' }, 403);
 }
