@@ -7,7 +7,6 @@ import { drinks, genders, pausedChatMessage, spots, reasons } from './options';
 import { BarCard, BarSetup, type BarCandidate, type BarProfile } from './across-bar';
 import { DiscoverGuide } from './discover-guide';
 import { GuestPrivacy } from './guest-privacy';
-import { JoinChallenge } from './join-challenge';
 import { MeetupCard, MeetupEditor, type MeetupDraft, type MeetupInvite } from './meetup-invite';
 import { MessageBubbles, type Message } from './chat-messages';
 import { trackIncomingMessages } from './message-alerts.mjs';
@@ -21,7 +20,6 @@ type Chat = { id: string; nickname: string; drink: string; spot: string; gender:
 type State = {
   availableSpots?: string[];
   profile: (BarProfile & { nickname: string; drink: string; spot: string; quickGender: string; waiting: boolean }) | null;
-  challenge?: { required: boolean; siteKey?: string };
   activeUsers: number;
   active?: Chat;
   selected?: Chat;
@@ -69,8 +67,6 @@ export default function Home() {
   const [chatId, setChatId] = useState('');
   const [nickname, setNickname] = useState('');
   const [adult, setAdult] = useState(false);
-  const [challengeToken, setChallengeToken] = useState('');
-  const [challengeAttempt, setChallengeAttempt] = useState(0);
   const [drink, setDrink] = useState('');
   const [spot, setSpot] = useState('');
   const [quickGender, setQuickGender] = useState('');
@@ -592,22 +588,16 @@ export default function Home() {
 
           {data?.suspended && <p className="card" role="status">This browser is suspended from joining Shattana.
             {data.guestControls && ' You can still manage your session in Privacy & guest session below.'}</p>}
-          {data && !joined && !data.suspended && <form className="card entry" onSubmit={async event => {
+          {data && !joined && !data.suspended && <form className="card entry" onSubmit={event => {
             event.preventDefault();
-            if (data.challenge?.required && !challengeToken) return;
-            if (!await act('join', { nickname, adult, challengeToken }) && data.challenge?.siteKey) {
-              setChallengeToken('');
-              setChallengeAttempt(attempt => attempt + 1);
-            }
+            void act('join', { nickname, adult });
           }}>
             <div className="card-head"><span className="tile-icon"><MessageCircle size={22} /></span><h2>Join as a guest</h2><p>Pick a nickname to get started.</p></div>
             <div className="fields">
               <label>Nickname<input required maxLength={24} value={nickname} onChange={event => setNickname(event.target.value)} placeholder="e.g. Kai" /></label>
             </div>
             <label className="check"><input type="checkbox" checked={adult} onChange={event => setAdult(event.target.checked)} required /> I’m 18 or older</label>
-            {data.challenge?.siteKey && <JoinChallenge key={challengeAttempt} siteKey={data.challenge.siteKey} theme={dark ? 'dark' : 'light'} onToken={setChallengeToken} />}
-            {data.challenge?.required && !data.challenge.siteKey && <p role="status">Guest verification is temporarily unavailable.</p>}
-            <button className="primary" disabled={busy || Boolean(data.challenge?.required && !challengeToken)}>Continue <ArrowRight size={18} /></button>
+            <button className="primary" disabled={busy}>Continue <ArrowRight size={18} /></button>
             <p className="privacy-note"><ShieldCheck size={16} /> Share only what you’re comfortable sharing.</p>
           </form>}
 

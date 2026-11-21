@@ -100,7 +100,7 @@ before(async () => {
     await db.close();
   }
   const env = { ...process.env };
-  for (const key of ['DATABASE_URL', 'DATABASE_CA_CERT', 'VERCEL', 'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY']) delete env[key];
+  for (const key of ['DATABASE_URL', 'DATABASE_CA_CERT', 'VERCEL']) delete env[key];
   const salt = randomBytes(16);
   env.MODERATION_USERNAME = moderatorUsername;
   env.MODERATION_PASSWORD_HASH = salt.toString('hex') + ':' + scryptSync(moderatorPassword, salt, 64).toString('hex');
@@ -212,6 +212,8 @@ test('daily retention removes expired photo evidence and is safe to run twice', 
 });
 
 test('two guests match, retry safely, and keep newer messages unread', async () => {
+  const missingAgeConfirmation = await chat({}, 'join', { nickname: 'Test guest' }, 400);
+  assert.match(missingAgeConfirmation.error, /confirm you are 18\+/);
   const { a, b, id } = await pair('Kai', 'Sol');
   await chat(a, 'shot', { chatId: id });
   assert.equal((await chat(b)).selected.shot, false);

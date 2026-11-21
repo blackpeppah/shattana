@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { transact } from '../../../db/store';
 import { genders, barInterests, barReportReasons, drinks, pausedChatMessage, spots, reasons } from '../../options';
-import { challengeConfig, verifyJoinChallenge } from './turnstile';
 import { bacolodDate } from '../../bacolod-time';
 import { allowAttempt, connectionSubject } from '../safety';
 import { barCardEligibility, barEligibility, browserCookie, browserSuspended, guestCookie, guestSuspended, sameGuestOrigin, uuid } from './access';
@@ -30,21 +29,11 @@ function upcomingMeetup(date: string, time?: unknown) {
 const adultAge = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 18 && value <= 120;
 async function handle(req: NextRequest, write: boolean) {
   try {
-    const origin = req.headers.get('origin');
     if (write && !sameGuestOrigin(req)) {
       return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
     }
     const input = write ? await req.json().catch(() => null) : {};
     if (!input || typeof input !== 'object') throw new InputError('Invalid request.');
-    const challenge = challengeConfig();
-    if (input.action === 'join' && challenge.required) {
-      if (!challenge.secret) throw new Error('Turnstile signup keys are missing or invalid');
-      if (!clean(input.nickname, 24) || input.adult !== true) throw new InputError('Choose a nickname and confirm you are 18+.');
-      if (typeof input.challengeToken !== 'string' || !input.challengeToken || input.challengeToken.length > 2048 ||
-        !await verifyJoinChallenge(input.challengeToken, new URL(origin!).hostname, challenge.secret, challenge.testing)) {
-        throw new InputError('Complete the verification and try again.');
-      }
-    }
     const token = req.cookies.get(guestCookie)?.value;
     let id = uuid(token) ? token : null;
     const browserToken = req.cookies.get(browserCookie)?.value;
@@ -83,8 +72,7 @@ async function handle(req: NextRequest, write: boolean) {
           ${guestControls ? 'and session_ended_at is null and suspended_at is null' : ''}`);
         return Number(presence.total);
       };
-      const guestless = async () => ({ profile: null, activeUsers: await activeUsers(),
-        challenge: { required: challenge.required, siteKey: challenge.siteKey } });
+      const guestless = async () => ({ profile: null, activeUsers: await activeUsers() });
       if (input.action === 'end-session' || input.action === 'delete-data') {
         if (!guestControls) throw new InputError('Guest session controls are unavailable on this database.');
         if (!profile) throw new InputError('This guest session is no longer available. Refresh to continue.');

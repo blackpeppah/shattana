@@ -3,11 +3,14 @@ import { isIP } from 'node:net';
 import type { NextRequest } from 'next/server';
 import type { Query } from '../../db/store';
 
-export function connectionSubject(req: NextRequest, secret: string | Buffer | undefined = process.env.RATE_LIMIT_SECRET || process.env.TURNSTILE_SECRET_KEY) {
+export function connectionSubject(req: NextRequest, secret?: string | Buffer) {
   if (!process.env.VERCEL) return 'local';
   const address = req.headers.get('x-vercel-forwarded-for')?.trim();
-  if (!secret || !address || !isIP(address)) throw new Error('Connection rate limiter is unavailable');
-  return createHmac('sha256', secret).update(address).digest('hex');
+  const databaseUrl = process.env.DATABASE_URL;
+  const key = secret || process.env.RATE_LIMIT_SECRET ||
+    (databaseUrl && createHmac('sha256', databaseUrl).update('shattana:signup-rate-limit').digest());
+  if (!key || !address || !isIP(address)) throw new Error('Connection rate limiter is unavailable');
+  return createHmac('sha256', key).update(address).digest('hex');
 }
 
 export async function allowAttempt(query: Query, scope: string, subject: string, windowSeconds: number, maximum: number) {
