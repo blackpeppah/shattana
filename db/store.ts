@@ -32,6 +32,9 @@ async function localDatabase() {
 }
 
 function createPool(connectionString: string) {
+  if (!/^postgres(?:ql)?:\/\//i.test(connectionString) || !URL.canParse(connectionString)) {
+    throw new Error('DATABASE_URL must be a PostgreSQL connection string. Copy the Transaction pooler URI from Supabase Connect.');
+  }
   const url = new URL(connectionString);
   const supabase = url.hostname.endsWith('.supabase.co') || url.hostname.endsWith('.pooler.supabase.com');
   const ca = process.env.DATABASE_CA_CERT?.trim().replace(/\\n/g, '\n') || (supabase ? supabaseProductionCa : undefined);
@@ -39,12 +42,14 @@ function createPool(connectionString: string) {
     // pg lets URL SSL parameters override the supplied TLS options.
     for (const option of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'ssl', 'uselibpqcompat']) url.searchParams.delete(option);
   }
-  return new Pool({
+  const pool = new Pool({
     connectionString: url.href,
     max: 2,
     connectionTimeoutMillis: 5000,
     ssl: ca ? { rejectUnauthorized: true, ca } : undefined,
   });
+  pool.on('error', error => console.error('Idle database connection closed:', error.message));
+  return pool;
 }
 
 export async function transact<T>(write: boolean, work: (query: Query) => Promise<T>) {

@@ -10,9 +10,9 @@ const localRuntime = globalThis as typeof globalThis & { shattanaPhotoKey?: Buff
 function remoteStorage() {
   const key = process.env.SUPABASE_SECRET_KEY?.trim();
   const configured = process.env.SUPABASE_URL?.trim();
-  if (!configured || !key?.startsWith('sb_secret_')) return null;
-  const url = URL.parse(configured);
-  if (!url || url.protocol !== 'https:' || url.username || url.password) return null;
+  if (!configured || !key?.startsWith('sb_secret_') || !URL.canParse(configured)) return null;
+  const url = new URL(configured);
+  if (url.protocol !== 'https:' || url.username || url.password) return null;
   return { base: `${url.origin}/storage/v1`, key };
 }
 
