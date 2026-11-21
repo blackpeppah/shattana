@@ -177,7 +177,8 @@ async function update(req: NextRequest) {
     });
     if (result.ok) reserved = undefined;
     return result;
-  } catch {
+  } catch (error) {
+    console.error('Profile photo update failed:', error instanceof Error ? error.message : 'Unknown error');
     return unavailable();
   } finally {
     if (reserved && fileStored) {

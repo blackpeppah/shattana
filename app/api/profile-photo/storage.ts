@@ -40,7 +40,12 @@ async function storageRequest(path: string, init: RequestInit) {
   const response = await fetch(`${storage.base}${path}`, {
     ...init, headers, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(4500),
   });
-  if (!response.ok) throw new Error(`Profile photo storage returned HTTP ${response.status}.`);
+  if (!response.ok) {
+    const details = await response.json().catch(() => null);
+    const code = details?.message === 'Bucket not found' ? 'NoSuchBucket' : details?.code;
+    const safeCode = typeof code === 'string' && /^[A-Z][a-zA-Z0-9]{1,49}$/.test(code) ? ` (${code})` : '';
+    throw new Error(`Supabase Storage ${init.method ?? 'GET'} returned HTTP ${response.status}${safeCode}.`);
+  }
   return { response, base: storage.base };
 }
 
